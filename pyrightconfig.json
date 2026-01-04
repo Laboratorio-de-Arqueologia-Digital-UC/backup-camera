@@ -5,7 +5,11 @@
     ],
     "exclude": [
         "**/node_modules",
-        "**/__pycache__"
+        "**/__pycache__",
+        ".venv",
+        "dist",
+        "build",
+        "*.spec"
     ],
     "reportMissingImports": true,
     "reportMissingTypeStubs": false,

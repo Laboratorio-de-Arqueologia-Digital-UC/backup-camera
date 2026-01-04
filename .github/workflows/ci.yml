@@ -37,7 +37,7 @@ jobs:
 
     - name: Type Check with Pyright
       run: |
-        uv run pyright .
+        uv run pyright
 
     - name: Run Tests
       run: |
