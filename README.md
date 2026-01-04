@@ -67,7 +67,9 @@ dist/BackupCamera.exe
 ### Flujo de Trabajo
 1.  **Panel 1 (Naranja - Origen):** Inserte la tarjeta SD. El sistema validará su ID de hardware automáticamente.
 2.  **Panel 2 (Azul - Ingesta):** Presione "INICIAR COPIA". Los datos se transfieren y verifican al repositorio local.
-3.  **Panel 3 (Verde - Respaldo):** Conecte el disco externo. Debe contener un archivo `.backup_drive` en la raíz para ser reconocido. Presione "CLONAR".
+3.  **Panel 3 (Verde - Respaldo):** Conecte el disco externo.
+    > **IMPORTANTE:** El disco externo DEBE tener un archivo vacío llamado `.backup_drive` en su raíz para ser detectado (medida de seguridad).
+    Presione "CLONAR".
 
 ## 📂 Estructura del Proyecto
 
@@ -108,4 +110,4 @@ Distribuido bajo la licencia **Apache 2.0**. Ver archivo `LICENSE` para más inf
 
 ## ✍️ Autores
 
-*   **Laboratorio de Arqueología Digital** - *Desarrollo Inicial*
+*   **Laboratorio de Arqueología Digital UC** - *Desarrollo Inicial*

@@ -4,6 +4,7 @@ import time
 import os
 import logging
 import json
+import shutil
 from tkinter import messagebox
 
 # Import core logic
@@ -14,6 +15,8 @@ from lib_storage import calculate_required_space, check_destination_space, gener
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+import pythoncom
+
 class MonitorThread(threading.Thread):
     def __init__(self, app):
         super().__init__()
@@ -22,6 +25,7 @@ class MonitorThread(threading.Thread):
         self.running = True
 
     def run(self):
+        pythoncom.CoInitialize()
         while self.running:
             try:
                 # 1. Scan for Source Drives (SD Cards)
@@ -211,6 +215,9 @@ class BackupCameraApp(ctk.CTk):
         self.lbl_source_info = ctk.CTkLabel(self.frame_source, text="Buscando tarjetas...", font=("Arial", 14))
         self.lbl_source_info.pack(pady=10)
         
+        self.lbl_source_space = ctk.CTkLabel(self.frame_source, text="", font=("Arial", 12), text_color="gray")
+        self.lbl_source_space.pack(pady=5)
+        
         self.option_source = ctk.CTkOptionMenu(self.frame_source, values=["Detectando..."], command=self.on_source_select)
         self.option_source.pack(pady=10)
         
@@ -220,9 +227,19 @@ class BackupCameraApp(ctk.CTk):
 
         self.lbl_transit_title = ctk.CTkLabel(self.frame_transit, text="2. INGESTA", font=("Arial", 20, "bold"), text_color="#3399ff")
         self.lbl_transit_title.pack(pady=20)
+        
+        # Folder Selection
+        self.lbl_local_repo = ctk.CTkLabel(self.frame_transit, text=f"Destino: {self.local_repo}", font=("Arial", 11), wraplength=280)
+        self.lbl_local_repo.pack(pady=(10, 0))
+        
+        self.btn_select_repo = ctk.CTkButton(self.frame_transit, text="Cambiar Carpeta", command=self.change_local_repo, width=120, height=24, fg_color="#445566")
+        self.btn_select_repo.pack(pady=(5, 20))
+
+        self.lbl_transit_space = ctk.CTkLabel(self.frame_transit, text="", font=("Arial", 12), text_color="#aaaaaa")
+        self.lbl_transit_space.pack(pady=2)
 
         self.btn_start = ctk.CTkButton(self.frame_transit, text="INICIAR COPIA", command=self.start_ingest, state="disabled", height=50, fg_color="#0066cc")
-        self.btn_start.pack(pady=40)
+        self.btn_start.pack(pady=20)
 
         self.progress_bar = ctk.CTkProgressBar(self.frame_transit)
         self.progress_bar.set(0)
@@ -240,6 +257,9 @@ class BackupCameraApp(ctk.CTk):
         
         self.lbl_dest_info = ctk.CTkLabel(self.frame_dest, text="Conecte Disco Externo", font=("Arial", 14))
         self.lbl_dest_info.pack(pady=10)
+        
+        self.lbl_dest_space = ctk.CTkLabel(self.frame_dest, text="", font=("Arial", 12), text_color="gray")
+        self.lbl_dest_space.pack(pady=5)
 
         self.btn_backup = ctk.CTkButton(self.frame_dest, text="CLONAR A EXTERNO", command=self.start_backup, state="disabled", fg_color="#009933")
         self.btn_backup.pack(pady=40)
@@ -247,6 +267,24 @@ class BackupCameraApp(ctk.CTk):
         # Start Monitor
         self.monitor = MonitorThread(self)
         self.monitor.start()
+        
+        # Initial Space Check for Local Repo
+        self.update_local_space()
+
+    def change_local_repo(self):
+        root = ctk.filedialog.askdirectory(initialdir=self.local_repo, title="Seleccionar Carpeta de Ingesta")
+        if root:
+            self.local_repo = root
+            self.lbl_local_repo.configure(text=f"Destino: {self.local_repo}")
+            self.update_local_space()
+
+    def update_local_space(self):
+        try:
+            total, used, free = shutil.disk_usage(self.local_repo)
+            gb = 1024**3
+            self.lbl_transit_space.configure(text=f"Libre: {free/gb:.1f} GB / Total: {total/gb:.1f} GB")
+        except:
+            self.lbl_transit_space.configure(text="Espacio Desconocido")
 
     def update_backup_list(self, drives):
         self.after(0, lambda: self._update_backup_ui(drives))
@@ -254,15 +292,27 @@ class BackupCameraApp(ctk.CTk):
     def _update_backup_ui(self, drives):
         if not drives:
             self.lbl_dest_info.configure(text="Conecte Disco Externo\n(Debe tener .backup_drive)", text_color="gray")
+            self.lbl_dest_space.configure(text="")
             self.btn_backup.configure(state="disabled")
         else:
             # Pick first available
             target = drives[0]
             self.lbl_dest_info.configure(text=f"Destino Detectado: {target}", text_color="#00cc66")
+            
+            # Get space info
+            try:
+                total, used, free = shutil.disk_usage(target)
+                gb = 1024**3
+                self.lbl_dest_space.configure(text=f"Libre: {free/gb:.1f} GB / Total: {total/gb:.1f} GB")
+            except:
+                self.lbl_dest_space.configure(text="?")
+                
             self.btn_backup.configure(state="normal")
             self.backup_target = target
 
     def start_backup(self):
+        # Update local space periodically or before action
+        self.update_local_space()
         # Only start if we have something in local repo
         if not os.path.exists(self.local_repo) or not os.listdir(self.local_repo):
             messagebox.showwarning("Aviso", "No hay datos locales para respaldar.")
@@ -315,8 +365,11 @@ class BackupCameraApp(ctk.CTk):
                 self.option_source.set(values[0])
                 self.on_source_select(values[0])
                 
+
+
     def on_source_select(self, choice):
         if choice == "Sin Origen":
+            self.lbl_source_space.configure(text="")
             return
         
         letter = choice.split(" ")[0]
@@ -326,7 +379,18 @@ class BackupCameraApp(ctk.CTk):
         hw_id = get_real_hardware_id(letter)
         info = get_drive_info(letter)
         
-        display_text = f"Unidad: {letter}\nEtiqueta: {info['label'] if info else '?'}\nID Hardware: {hw_id}\nLibre: {info['free']//(1024**3)} GB"
+        if info:
+            gb = 1024**3
+            # We already have info['free'], need total ideally, but lib_hardware might return it. 
+            # If lib_hardware only returns 'size', that is total.
+            # Let's check lib_hardware or just use shutil here for consistency if drive is mounted.
+            try:
+                t, u, f = shutil.disk_usage(letter)
+                self.lbl_source_space.configure(text=f"Libre: {f/gb:.1f} GB / Total: {t/gb:.1f} GB")
+            except:
+                self.lbl_source_space.configure(text="Espacio: ?")
+        
+        display_text = f"Unidad: {letter}\nEtiqueta: {info['label'] if info else '?'}\nID Hardware: {hw_id}"
         self.lbl_source_info.configure(text=display_text)
         
         if hw_id:
@@ -361,6 +425,12 @@ class BackupCameraApp(ctk.CTk):
         # Start Thread
         worker = IngestWorker(self.selected_source, dest_path, self)
         worker.start()
+
+    def update_status(self, msg):
+        self.after(0, lambda: self._update_status_ui(msg))
+
+    def _update_status_ui(self, msg):
+        self.lbl_status.configure(text=msg)
 
     def update_progress(self, val, msg):
         self.after(0, lambda: self._update_progress_ui(val, msg))
