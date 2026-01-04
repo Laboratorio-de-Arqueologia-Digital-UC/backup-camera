@@ -9,4 +9,4 @@ Need help with **Backup Camera**?
 
 ## Email
 
-For private inquiries, contact the maintainers at: victor.mendez@uc.cl (Placeholder).
+For private inquiries, contact the maintainers at: victor.mendez@uc.cl.

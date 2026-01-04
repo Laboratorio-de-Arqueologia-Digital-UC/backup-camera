@@ -6,16 +6,25 @@ import logging
 import json
 import shutil
 from tkinter import messagebox
+import pythoncom
 
 # Import core logic
 from lib_hardware import get_real_hardware_id, scan_drives, get_drive_info
 from lib_copy import secure_copy
-from lib_storage import calculate_required_space, check_destination_space, generate_folder_name, check_duplicate_ingest
+from lib_storage import (
+    calculate_required_space,
+    check_destination_space,
+    generate_folder_name,
+    check_duplicate_ingest,
+)
 
 # Configure Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-import pythoncom
+
+
 
 class MonitorThread(threading.Thread):
     def __init__(self, app):
@@ -31,16 +40,16 @@ class MonitorThread(threading.Thread):
                 # 1. Scan for Source Drives (SD Cards)
                 drives = scan_drives()
                 self.app.update_source_list(drives)
-                
+
                 # 2. Check for Destination Availability (External Backup)
                 # For this MVP/V1, we might just look for the .backup_drive marker on available logical drives
                 # But typically this is triggered by user interaction or similar scan.
                 # Let's simplisticly scan all logical drives for the marker
                 self.check_external_targets()
-                
+
             except Exception as e:
                 logging.error(f"Monitor loop error: {e}")
-            
+
             time.sleep(2)
 
     def check_external_targets(self):
@@ -52,18 +61,22 @@ class MonitorThread(threading.Thread):
             # For robustness, let's look at all logical drives that are potentially writable data drives.
             # Using WMI or simply iterating common letters is fine.
             import string
-            available_drives = ['%s:' % d for d in string.ascii_uppercase if os.path.exists('%s:' % d)]
-            
+
+            available_drives = [
+                "%s:" % d for d in string.ascii_uppercase if os.path.exists("%s:" % d)
+            ]
+
             for drive in available_drives:
                 # Check for marker file
                 marker_path = os.path.join(drive, ".backup_drive")
                 if os.path.exists(marker_path):
                     found_backups.append(drive)
-            
+
             self.app.update_backup_list(found_backups)
-            
+
         except Exception as e:
             logging.error(f"Backup scan error: {e}")
+
 
 class IngestWorker(threading.Thread):
     def __init__(self, source_path, dest_path, app):
@@ -77,39 +90,40 @@ class IngestWorker(threading.Thread):
         try:
             total_size = calculate_required_space(self.source_path)
             self.app.update_progress(0, "Calculando espacio...")
-            
+
             if total_size == 0:
                 self.app.ingest_failed("La tarjeta parece vacía.")
                 return
 
-            if not check_destination_space(os.path.splitdrive(self.dest_path)[0], total_size):
+            if not check_destination_space(
+                os.path.splitdrive(self.dest_path)[0], total_size
+            ):
                 self.app.ingest_failed("Espacio insuficiente en disco destino.")
                 return
 
             # Walk and Copy
-            copied_files = 0
             total_bytes_copied = 0
-            
+
             file_list = []
             for dirpath, _, filenames in os.walk(self.source_path):
                 for f in filenames:
                     file_list.append(os.path.join(dirpath, f))
-            
+
             # Create manifest data structure
             manifest = {
                 "source_path": self.source_path,
                 "destination_path": self.dest_path,
                 "timestamp": time.ctime(),
-                "files": []
+                "files": [],
             }
 
             for src_file in file_list:
                 rel_path = os.path.relpath(src_file, self.source_path)
                 dst_file = os.path.join(self.dest_path, rel_path)
-                
+
                 # Update UI
                 self.app.update_status(f"Copiando: {rel_path}")
-                
+
                 # Copy with hash
                 def progress_cb(written, total):
                     # Global progress could be calculated if we tracked total job size accurately
@@ -117,18 +131,20 @@ class IngestWorker(threading.Thread):
                     pass
 
                 file_hash = secure_copy(src_file, dst_file, progress_cb)
-                
+
                 # Verify Logic could go here (double read)
-                
+
                 total_bytes_copied += os.path.getsize(src_file)
-                overall_progress = (total_bytes_copied / total_size)
+                overall_progress = total_bytes_copied / total_size
                 self.app.update_progress(overall_progress, f"Verificado: {rel_path}")
-                
-                manifest["files"].append({
-                    "path": rel_path,
-                    "hash": file_hash,
-                    "size": os.path.getsize(dst_file)
-                })
+
+                manifest["files"].append(
+                    {
+                        "path": rel_path,
+                        "hash": file_hash,
+                        "size": os.path.getsize(dst_file),
+                    }
+                )
 
             # Save Manifest
             with open(os.path.join(self.dest_path, "manifest.json"), "w") as f:
@@ -148,17 +164,17 @@ class BackupWorker(threading.Thread):
         self.dst_drive = dst_drive
         self.app = app
         self.daemon = True
-        
+
     def run(self):
         try:
             # Simple sync: Copy folders from Repo to Drive/Backup_Ingesta
             dst_repo = os.path.join(self.dst_drive, "Backup_Ingesta")
             os.makedirs(dst_repo, exist_ok=True)
-            
+
             # Use improved shutil capability or manual walk.
             # For "Cloning", we usually want robust copy.
             import shutil
-            
+
             count = 0
             # Iterate over folders in local repo
             for item in os.listdir(self.src_repo):
@@ -168,18 +184,19 @@ class BackupWorker(threading.Thread):
                     if not os.path.exists(d):
                         # Copy entire tree if missing
                         # This blocks UI progress updates for the whole folder, ideally we'd chunk it.
-                        shutil.copytree(s, d) 
+                        shutil.copytree(s, d)
                         count += 1
                     else:
                         # Skip or merge? Secure policy usually implies we don't overwrite blindly.
                         # Assuming distinct folders by timestamp.
-                        pass 
-            
+                        pass
+
             self.app.backup_complete(count)
-            
+
         except Exception as e:
             logging.error(f"Backup failed: {e}")
-            self.app.after(0, lambda: messagebox.showerror("Error Respaldo", str(e)))
+            err_msg = str(e)
+            self.app.after(0, lambda: messagebox.showerror("Error Respaldo", err_msg))
             self.app.after(0, lambda: self.app.btn_backup.configure(state="normal"))
 
 
@@ -190,7 +207,7 @@ class BackupCameraApp(ctk.CTk):
         self.title("Backup Camera - Ingesta Forense")
         self.geometry("1000x600")
         ctk.set_appearance_mode("Dark")
-        
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(2, weight=1)
@@ -198,81 +215,137 @@ class BackupCameraApp(ctk.CTk):
 
         # State
         self.selected_source = None
-        self.local_repo = "C:\\Backup_Ingesta" # Default local landing zone
+        self.local_repo = "C:\\Backup_Ingesta"  # Default local landing zone
         if not os.path.exists(self.local_repo):
             try:
                 os.makedirs(self.local_repo)
-            except:
-                pass # let user config later or handle error
+            except Exception:
+                pass  # let user config later or handle error
 
         # --- PANEL 1: SOURCE (Orange) ---
-        self.frame_source = ctk.CTkFrame(self, fg_color="#3b2d18") # Dark Orange-ish
+        self.frame_source = ctk.CTkFrame(self, fg_color="#3b2d18")  # Dark Orange-ish
         self.frame_source.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        
-        self.lbl_source_title = ctk.CTkLabel(self.frame_source, text="1. ORIGEN (SD)", font=("Arial", 20, "bold"), text_color="#ff9900")
+
+        self.lbl_source_title = ctk.CTkLabel(
+            self.frame_source,
+            text="1. ORIGEN (SD)",
+            font=("Arial", 20, "bold"),
+            text_color="#ff9900",
+        )
         self.lbl_source_title.pack(pady=20)
-        
-        self.lbl_source_info = ctk.CTkLabel(self.frame_source, text="Buscando tarjetas...", font=("Arial", 14))
+
+        self.lbl_source_info = ctk.CTkLabel(
+            self.frame_source, text="Buscando tarjetas...", font=("Arial", 14)
+        )
         self.lbl_source_info.pack(pady=10)
-        
-        self.lbl_source_space = ctk.CTkLabel(self.frame_source, text="", font=("Arial", 12), text_color="gray")
+
+        self.lbl_source_space = ctk.CTkLabel(
+            self.frame_source, text="", font=("Arial", 12), text_color="gray"
+        )
         self.lbl_source_space.pack(pady=5)
-        
-        self.option_source = ctk.CTkOptionMenu(self.frame_source, values=["Detectando..."], command=self.on_source_select)
+
+        self.option_source = ctk.CTkOptionMenu(
+            self.frame_source, values=["Detectando..."], command=self.on_source_select
+        )
         self.option_source.pack(pady=10)
-        
+
         # --- PANEL 2: TRANSIT (Blue) ---
-        self.frame_transit = ctk.CTkFrame(self, fg_color="#1a2d3b") # Dark Blue-ish
+        self.frame_transit = ctk.CTkFrame(self, fg_color="#1a2d3b")  # Dark Blue-ish
         self.frame_transit.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        self.lbl_transit_title = ctk.CTkLabel(self.frame_transit, text="2. INGESTA", font=("Arial", 20, "bold"), text_color="#3399ff")
+        self.lbl_transit_title = ctk.CTkLabel(
+            self.frame_transit,
+            text="2. INGESTA",
+            font=("Arial", 20, "bold"),
+            text_color="#3399ff",
+        )
         self.lbl_transit_title.pack(pady=20)
-        
+
         # Folder Selection
-        self.lbl_local_repo = ctk.CTkLabel(self.frame_transit, text=f"Destino: {self.local_repo}", font=("Arial", 11), wraplength=280)
+        self.lbl_local_repo = ctk.CTkLabel(
+            self.frame_transit,
+            text=f"Destino: {self.local_repo}",
+            font=("Arial", 11),
+            wraplength=280,
+        )
         self.lbl_local_repo.pack(pady=(10, 0))
-        
-        self.btn_select_repo = ctk.CTkButton(self.frame_transit, text="Cambiar Carpeta", command=self.change_local_repo, width=120, height=24, fg_color="#445566")
+
+        self.btn_select_repo = ctk.CTkButton(
+            self.frame_transit,
+            text="Cambiar Carpeta",
+            command=self.change_local_repo,
+            width=120,
+            height=24,
+            fg_color="#445566",
+        )
         self.btn_select_repo.pack(pady=(5, 20))
 
-        self.lbl_transit_space = ctk.CTkLabel(self.frame_transit, text="", font=("Arial", 12), text_color="#aaaaaa")
+        self.lbl_transit_space = ctk.CTkLabel(
+            self.frame_transit, text="", font=("Arial", 12), text_color="#aaaaaa"
+        )
         self.lbl_transit_space.pack(pady=2)
 
-        self.btn_start = ctk.CTkButton(self.frame_transit, text="INICIAR COPIA", command=self.start_ingest, state="disabled", height=50, fg_color="#0066cc")
+        self.btn_start = ctk.CTkButton(
+            self.frame_transit,
+            text="INICIAR COPIA",
+            command=self.start_ingest,
+            state="disabled",
+            height=50,
+            fg_color="#0066cc",
+        )
         self.btn_start.pack(pady=20)
 
         self.progress_bar = ctk.CTkProgressBar(self.frame_transit)
         self.progress_bar.set(0)
         self.progress_bar.pack(pady=10, padx=20, fill="x")
 
-        self.lbl_status = ctk.CTkLabel(self.frame_transit, text="Esperando...", font=("Arial", 12))
+        self.lbl_status = ctk.CTkLabel(
+            self.frame_transit, text="Esperando...", font=("Arial", 12)
+        )
         self.lbl_status.pack(pady=5)
 
         # --- PANEL 3: DESTINATION (Green) ---
-        self.frame_dest = ctk.CTkFrame(self, fg_color="#1a3b25") # Dark Green-ish
+        self.frame_dest = ctk.CTkFrame(self, fg_color="#1a3b25")  # Dark Green-ish
         self.frame_dest.grid(row=0, column=2, sticky="nsew", padx=5, pady=5)
 
-        self.lbl_dest_title = ctk.CTkLabel(self.frame_dest, text="3. RESPALDO EXT.", font=("Arial", 20, "bold"), text_color="#00cc66")
+        self.lbl_dest_title = ctk.CTkLabel(
+            self.frame_dest,
+            text="3. RESPALDO EXT.",
+            font=("Arial", 20, "bold"),
+            text_color="#00cc66",
+        )
         self.lbl_dest_title.pack(pady=20)
-        
-        self.lbl_dest_info = ctk.CTkLabel(self.frame_dest, text="Conecte Disco Externo", font=("Arial", 14))
+
+        self.lbl_dest_info = ctk.CTkLabel(
+            self.frame_dest, text="Conecte Disco Externo", font=("Arial", 14)
+        )
         self.lbl_dest_info.pack(pady=10)
-        
-        self.lbl_dest_space = ctk.CTkLabel(self.frame_dest, text="", font=("Arial", 12), text_color="gray")
+
+        self.lbl_dest_space = ctk.CTkLabel(
+            self.frame_dest, text="", font=("Arial", 12), text_color="gray"
+        )
         self.lbl_dest_space.pack(pady=5)
 
-        self.btn_backup = ctk.CTkButton(self.frame_dest, text="CLONAR A EXTERNO", command=self.start_backup, state="disabled", fg_color="#009933")
+        self.btn_backup = ctk.CTkButton(
+            self.frame_dest,
+            text="CLONAR A EXTERNO",
+            command=self.start_backup,
+            state="disabled",
+            fg_color="#009933",
+        )
         self.btn_backup.pack(pady=40)
-        
+
         # Start Monitor
         self.monitor = MonitorThread(self)
         self.monitor.start()
-        
+
         # Initial Space Check for Local Repo
         self.update_local_space()
 
     def change_local_repo(self):
-        root = ctk.filedialog.askdirectory(initialdir=self.local_repo, title="Seleccionar Carpeta de Ingesta")
+        root = ctk.filedialog.askdirectory(
+            initialdir=self.local_repo, title="Seleccionar Carpeta de Ingesta"
+        )
         if root:
             self.local_repo = root
             self.lbl_local_repo.configure(text=f"Destino: {self.local_repo}")
@@ -282,31 +355,40 @@ class BackupCameraApp(ctk.CTk):
         try:
             total, used, free = shutil.disk_usage(self.local_repo)
             gb = 1024**3
-            self.lbl_transit_space.configure(text=f"Libre: {free/gb:.1f} GB / Total: {total/gb:.1f} GB")
-        except:
+            self.lbl_transit_space.configure(
+                text=f"Libre: {free / gb:.1f} GB / Total: {total / gb:.1f} GB"
+            )
+        except Exception:
             self.lbl_transit_space.configure(text="Espacio Desconocido")
 
     def update_backup_list(self, drives):
         self.after(0, lambda: self._update_backup_ui(drives))
-        
+
     def _update_backup_ui(self, drives):
         if not drives:
-            self.lbl_dest_info.configure(text="Conecte Disco Externo\n(Debe tener .backup_drive)", text_color="gray")
+            self.lbl_dest_info.configure(
+                text="Conecte Disco Externo\n(Debe tener .backup_drive)",
+                text_color="gray",
+            )
             self.lbl_dest_space.configure(text="")
             self.btn_backup.configure(state="disabled")
         else:
             # Pick first available
             target = drives[0]
-            self.lbl_dest_info.configure(text=f"Destino Detectado: {target}", text_color="#00cc66")
-            
+            self.lbl_dest_info.configure(
+                text=f"Destino Detectado: {target}", text_color="#00cc66"
+            )
+
             # Get space info
             try:
                 total, used, free = shutil.disk_usage(target)
                 gb = 1024**3
-                self.lbl_dest_space.configure(text=f"Libre: {free/gb:.1f} GB / Total: {total/gb:.1f} GB")
-            except:
+                self.lbl_dest_space.configure(
+                    text=f"Libre: {free / gb:.1f} GB / Total: {total / gb:.1f} GB"
+                )
+            except Exception:
                 self.lbl_dest_space.configure(text="?")
-                
+
             self.btn_backup.configure(state="normal")
             self.backup_target = target
 
@@ -317,31 +399,32 @@ class BackupCameraApp(ctk.CTk):
         if not os.path.exists(self.local_repo) or not os.listdir(self.local_repo):
             messagebox.showwarning("Aviso", "No hay datos locales para respaldar.")
             return
-            
+
         if not self.backup_target:
             return
-            
+
         # Launch Backup Worker (Reuse IngestWorker or generic copy? Let's make a simple specialized one)
         # For simplicity in this turn, I'll inline a simple thread or reuse IngestWorker logic if applicable.
         # But IngestWorker is specific to "Source -> Dest".
         # Let's create a BackupWorker quickly or allow IngestWorker to operate without "Source Drive" logic?
         # Cleaner to separate.
-        
+
         self.btn_backup.configure(state="disabled")
         self.lbl_dest_info.configure(text="Sincronizando...")
-        
+
         worker = BackupWorker(self.local_repo, self.backup_target, self)
         worker.start()
 
     def backup_complete(self, count):
         self.after(0, lambda: self._backup_complete_ui(count))
-        
+
     def _backup_complete_ui(self, count):
         self.lbl_dest_info.configure(text=f"Respaldo OK ({count} carpetas)")
         self.btn_backup.configure(state="normal")
-        messagebox.showinfo("Respaldo", f"Sincronización completada.\n{count} carpetas verificadas/copiadas.")
-
-
+        messagebox.showinfo(
+            "Respaldo",
+            f"Sincronización completada.\n{count} carpetas verificadas/copiadas.",
+        )
 
     def update_source_list(self, drives):
         # Called from thread, schedule UI update
@@ -359,49 +442,49 @@ class BackupCameraApp(ctk.CTk):
             if set(values) != set(current_vals) and current_vals != ["Sin Origen"]:
                 # Only update if changed to avoid resetting selection during active use
                 self.option_source.configure(values=values)
-            
+
             # Simple auto-select first if none selected
             if not self.selected_source and values:
                 self.option_source.set(values[0])
                 self.on_source_select(values[0])
-                
-
 
     def on_source_select(self, choice):
         if choice == "Sin Origen":
             self.lbl_source_space.configure(text="")
             return
-        
+
         letter = choice.split(" ")[0]
         self.selected_source = letter
-        
+
         # Get Info
         hw_id = get_real_hardware_id(letter)
         info = get_drive_info(letter)
-        
+
         if info:
             gb = 1024**3
-            # We already have info['free'], need total ideally, but lib_hardware might return it. 
+            # We already have info['free'], need total ideally, but lib_hardware might return it.
             # If lib_hardware only returns 'size', that is total.
             # Let's check lib_hardware or just use shutil here for consistency if drive is mounted.
             try:
                 t, u, f = shutil.disk_usage(letter)
-                self.lbl_source_space.configure(text=f"Libre: {f/gb:.1f} GB / Total: {t/gb:.1f} GB")
-            except:
+                self.lbl_source_space.configure(
+                    text=f"Libre: {f / gb:.1f} GB / Total: {t / gb:.1f} GB"
+                )
+            except Exception:
                 self.lbl_source_space.configure(text="Espacio: ?")
-        
+
         display_text = f"Unidad: {letter}\nEtiqueta: {info['label'] if info else '?'}\nID Hardware: {hw_id}"
         self.lbl_source_info.configure(text=display_text)
-        
+
         if hw_id:
             self.btn_start.configure(state="normal")
         else:
-            self.btn_start.configure(state="disabled") # Require valid WMI ID
+            self.btn_start.configure(state="disabled")  # Require valid WMI ID
 
     def start_ingest(self):
-        if not self.selected_source: 
+        if not self.selected_source:
             return
-        
+
         hw_id = get_real_hardware_id(self.selected_source)
         if not hw_id:
             messagebox.showerror("Error", "No se pudo validar el ID de Hardware.")
@@ -414,14 +497,17 @@ class BackupCameraApp(ctk.CTk):
         # Check Duplicates
         is_dup, prev_path = check_duplicate_ingest(self.local_repo, hw_id)
         if is_dup:
-            if not messagebox.askyesno("Duplicado Detectado", f"Esta tarjeta ya fue procesada hoy en:\n{prev_path}\n\n¿Desea procesar nuevamente?"):
+            if not messagebox.askyesno(
+                "Duplicado Detectado",
+                f"Esta tarjeta ya fue procesada hoy en:\n{prev_path}\n\n¿Desea procesar nuevamente?",
+            ):
                 return
-        
+
         # UI Lock
         self.btn_start.configure(state="disabled")
         self.option_source.configure(state="disabled")
         self.progress_bar.set(0)
-        
+
         # Start Thread
         worker = IngestWorker(self.selected_source, dest_path, self)
         worker.start()
@@ -441,7 +527,7 @@ class BackupCameraApp(ctk.CTk):
 
     def ingest_complete(self, path):
         self.after(0, lambda: self._ingest_complete_ui(path))
-    
+
     def _ingest_complete_ui(self, path):
         self.btn_start.configure(state="normal")
         self.option_source.configure(state="normal")
@@ -456,6 +542,7 @@ class BackupCameraApp(ctk.CTk):
         self.option_source.configure(state="normal")
         self.lbl_status.configure(text="Error en Ingesta")
         messagebox.showerror("Falló la Ingesta", error_msg)
+
 
 if __name__ == "__main__":
     app = BackupCameraApp()
