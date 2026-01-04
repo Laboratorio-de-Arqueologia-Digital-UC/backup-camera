@@ -24,8 +24,6 @@ logging.basicConfig(
 )
 
 
-
-
 class MonitorThread(threading.Thread):
     def __init__(self, app):
         super().__init__()
