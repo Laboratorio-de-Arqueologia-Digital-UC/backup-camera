@@ -25,7 +25,6 @@ def build():
         "--onefile",  # Single EXE
         "--noconsole",  # No terminal window
         "--clean",  # Clean cache
-        "--add-data=src;.",  # Include src folder content if needed (imports handle this mostly)
         "--collect-all=customtkinter",  # Ensure CTK assets are collected
         "--log-level=WARN",
         "--distpath=dist",  # Output directory for the executable
