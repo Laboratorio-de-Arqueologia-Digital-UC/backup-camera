@@ -108,6 +108,22 @@ Las contribuciones son bienvenidas para mejorar la seguridad o compatibilidad.
 
 Distribuido bajo la licencia **Apache 2.0**. Ver archivo `LICENSE` para más información.
 
+## 🛠️ Desarrollo y Releases
+
+### Commitizen
+Este proyecto utiliza **Conventional Commits**. Para realizar cambios, utilice:
+```bash
+uv run cz commit
+```
+Siga las instrucciones interactivas para clasificar su cambio (`feat`, `fix`, `docs`, etc.).
+
+### Releases Automáticos
+Para generar una nueva versión distribuible:
+1.  Actualice la versión en `pyproject.toml`.
+2.  Cree un tag en git: `git tag v0.1.0` (debe coincidir con la versión).
+3.  Empuje el tag: `git push origin v0.1.0`.
+4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v0.1.0.exe` y lo publicará en la sección **Releases**.
+
 ## ✍️ Autores
 
 *   **Laboratorio de Arqueología Digital UC** - *Desarrollo Inicial*
