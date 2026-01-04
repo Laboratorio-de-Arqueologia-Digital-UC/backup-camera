@@ -92,4 +92,21 @@ This project is developed in a **UV (Ultraviolet)** Python environment. This is 
 - **Symptom**: `AttributeError: '_tkinter.tkapp' object has no attribute 'on_source_select'` at startup.
 - **Cause**: The `BackupWorker` class was defined *inside* the body of `BackupCameraApp` (Python indentation error). This caused `BackupCameraApp` methods defined after `BackupWorker` to be lost or mis-scoped.
 - **Fix**: Moved `BackupWorker` class definition to the top of the file, outside of `BackupCameraApp`.
-- **Lesson**: Be extremely careful with indentation when defining multiple classes in a single file, especially when using AI-generated code blocks that might cut off class contexts.
+- **Lesson**: Be extremely careful with indentation when defining multiple classes in a single file.
+
+### [Fixed Bug] WMI in Threads
+- **Symptom**: `SyntaxError` from WMI when running in `MonitorThread`.
+- **Cause**: WMI uses COM, which must be initialized in every new thread on Windows.
+- **Fix**: Added `import pythoncom` and called `pythoncom.CoInitialize()` at the start of `MonitorThread.run()`.
+
+### [Fixed Bug] Pyright in CI
+- **Symptom**: 9000+ errors in CI/CD from `.venv` files.
+- **Cause**: `uv run pyright .` forced scanning of all directories including virtual environments.
+- **Fix**: 
+    1. Added `.venv`, `build`, `dist` to `pyrightconfig.json` excludes.
+    2. Changed CI command to `uv run pyright` (no dot) to respect the config file's `include` paths.
+
+### [Fixed Bug] PyInstaller Relative Paths
+- **Symptom**: `Unable to find '.../build/src'` during build.
+- **Cause**: Setting `--specpath=build` changes the working directory for relative paths in `.spec` files. A command like `--add-data=src;.` then looks for `src` *inside* `build/`.
+- **Fix**: Removed `--add-data=src;.` as it was redundant (PyInstaller automatically collects imported code). For non-code assets, absolute paths or careful relative pathing (e.g. `../src`) is required when spec is moved.
