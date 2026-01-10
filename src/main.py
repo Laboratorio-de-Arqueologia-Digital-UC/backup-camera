@@ -772,7 +772,6 @@ class BackupCameraApp(ctk.CTk):
         worker = IngestWorker(self.selected_source, dest_path, self)
         worker.start()
 
-
     def update_progress(self, val, msg):
         self.after(0, lambda: self._update_progress_ui(val, msg))
 
