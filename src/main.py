@@ -522,10 +522,10 @@ class BackupCameraApp(ctk.CTk):
             w = 600
         h = 80
         y = h // 2
-        x_sd = w * 0.15
+        # x_sd = w * 0.15  # Unused
         x_int = w * 0.5
-        x_ext = w * 0.85
-        r = 25
+        # x_ext = w * 0.85 # Unused
+        # r = 25           # Unused
 
         if step == "import":
             # Highlight Arrow 1 and SD/Int
@@ -772,11 +772,6 @@ class BackupCameraApp(ctk.CTk):
         worker = IngestWorker(self.selected_source, dest_path, self)
         worker.start()
 
-    def update_status(self, msg):
-        self.after(0, lambda: self._update_status_ui(msg))
-
-    def _update_status_ui(self, msg):
-        self.lbl_status.configure(text=msg)
 
     def update_progress(self, val, msg):
         self.after(0, lambda: self._update_progress_ui(val, msg))
