@@ -35,6 +35,19 @@ The system strictly enforces a two-step process:
 > [!NOTE]
 > **Safety Mechanism**: External drives are ONLY recognized if they contain a root file named `.backup_drive`. This prevents accidental cloning to the wrong drive.
 
+### Bridge Mode (Chunked Processing)
+Introduced in v1.1.0 to handle scenarios where `Size(SD Card) > FreeSpace(Internal Disk)`.
+
+**Logic Flow:**
+1.  **Analysis**: Compares Total Source Size vs. Internal Free Space.
+2.  **Strategy Selection**:
+    -   **Persistent Copy**: If Internal Space > Source Size, performs a full copy and **keeps** the internal copy (3 copies total: SD, Int, Ext).
+    -   **Volatile Copy (Chunking)**: If Internal Space is low, copies in ~5GB chunks.
+        -   `SD -> Internal (Temp) -> Verify Hash`
+        -   `Internal (Temp) -> External -> Verify Hash`
+        -   `Delete Internal (Temp)`
+3.  **Safety**: Always preserves a 2GB buffer on the internal OS drive.
+
 ## 2. Environment & Tooling (UV)
 
 This project is developed in a **UV (Ultraviolet)** Python environment. This is the primary tool for dependency resolution and execution.

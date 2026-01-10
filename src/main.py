@@ -7,6 +7,7 @@ import json
 import shutil
 from tkinter import messagebox
 import pythoncom
+import tkinter as tk
 
 # Import core logic
 from lib_hardware import get_real_hardware_id, scan_drives, get_drive_info
@@ -17,6 +18,7 @@ from lib_storage import (
     generate_folder_name,
     check_duplicate_ingest,
 )
+from lib_bridge import BridgeWorker
 
 # Configure Logging
 logging.basicConfig(
@@ -209,7 +211,13 @@ class BackupCameraApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(2, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+
+        # Row 0: Main Panels (Weight 3)
+        self.grid_rowconfigure(0, weight=3)
+        # Row 1: Bridge & Animation (Weight 1)
+        self.grid_rowconfigure(1, weight=1)
+        # Row 2: Report Log (Fixed/Weight 0)
+        self.grid_rowconfigure(2, weight=0, minsize=80)
 
         # State
         self.selected_source = None
@@ -331,7 +339,66 @@ class BackupCameraApp(ctk.CTk):
             state="disabled",
             fg_color="#009933",
         )
-        self.btn_backup.pack(pady=40)
+        self.btn_backup.pack(pady=10)
+
+        # Bridge Mode Button (New)
+        self.btn_bridge = ctk.CTkButton(
+            self.frame_dest,
+            text="MODO PUENTE (SD->INT->EXT)",
+            command=self.start_bridge,
+            state="disabled",
+            fg_color="#5500aa",  # Distinct purple color
+            height=50,
+        )
+        self.btn_bridge.pack(pady=10)
+
+        # --- ROW 1: BRIDGE & ANIMATION ---
+        self.frame_bridge = ctk.CTkFrame(self, fg_color="#2b2b2b")
+        self.frame_bridge.grid(
+            row=1, column=0, columnspan=3, sticky="nsew", padx=5, pady=5
+        )
+
+        self.frame_bridge.grid_columnconfigure(0, weight=0)  # Button
+        self.frame_bridge.grid_columnconfigure(1, weight=1)  # Animation
+
+        # Bridge Button (Left)
+        self.btn_bridge = ctk.CTkButton(
+            self.frame_bridge,
+            text="MODO PUENTE\n(SD -> INT -> EXT)",
+            command=self.start_bridge,
+            state="disabled",
+            fg_color="#5500aa",
+            height=60,
+            width=200,
+            font=("Arial", 14, "bold"),
+        )
+        self.btn_bridge.grid(row=0, column=0, padx=20, pady=20, sticky="w")
+
+        # Animation Canvas (Right)
+        # Using standard TK Canvas for drawing primitives
+
+        self.anim_canvas = tk.Canvas(
+            self.frame_bridge, bg="#2b2b2b", highlightthickness=0, height=80
+        )
+        self.anim_canvas.grid(row=0, column=1, padx=20, pady=10, sticky="ew")
+
+        # Initial Animation State (Static)
+        self.draw_anim_static()
+
+        # --- ROW 2: REPORT LOG ---
+        self.frame_report = ctk.CTkFrame(self, height=80, fg_color="black")
+        self.frame_report.grid(
+            row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=(0, 5)
+        )
+
+        self.log_text = ctk.CTkTextbox(
+            self.frame_report,
+            height=70,
+            font=("Consolas", 12),
+            activate_scrollbars=True,
+        )
+        self.log_text.pack(fill="both", expand=True, padx=2, pady=2)
+        self.log_text.configure(state="disabled")
 
         # Start Monitor
         self.monitor = MonitorThread(self)
@@ -348,6 +415,157 @@ class BackupCameraApp(ctk.CTk):
             self.local_repo = root
             self.lbl_local_repo.configure(text=f"Destino: {self.local_repo}")
             self.update_local_space()
+
+    def log_message(self, msg):
+        """Append a message to the bottom log area."""
+        timestamp = time.strftime("%H:%M:%S")
+        full_msg = f"[{timestamp}] {msg}\n"
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", full_msg)
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def draw_anim_static(self):
+        """Draws the 3 nodes (SD, Int, Ext) in static state."""
+        w = self.anim_canvas.winfo_width()
+        # Fallback if width not yet known (early init)
+        if w < 100:
+            w = 600
+
+        h = 80
+        y = h // 2
+
+        # Positions
+        x_sd = w * 0.15
+        x_int = w * 0.5
+        x_ext = w * 0.85
+        r = 25  # Radius
+
+        self.anim_canvas.delete("all")
+
+        # Draw Nodes
+        # SD (Orange)
+        self.anim_canvas.create_oval(
+            x_sd - r,
+            y - r,
+            x_sd + r,
+            y + r,
+            fill="#3b2d18",
+            outline="#ff9900",
+            width=2,
+            tags="node_sd",
+        )
+        self.anim_canvas.create_text(
+            x_sd, y, text="SD", fill="white", font=("Arial", 10, "bold")
+        )
+
+        # INT (Blue)
+        self.anim_canvas.create_oval(
+            x_int - r,
+            y - r,
+            x_int + r,
+            y + r,
+            fill="#1a2d3b",
+            outline="#3399ff",
+            width=2,
+            tags="node_int",
+        )
+        self.anim_canvas.create_text(
+            x_int, y, text="PC", fill="white", font=("Arial", 10, "bold")
+        )
+
+        # EXT (Green)
+        self.anim_canvas.create_oval(
+            x_ext - r,
+            y - r,
+            x_ext + r,
+            y + r,
+            fill="#1a3b25",
+            outline="#00cc66",
+            width=2,
+            tags="node_ext",
+        )
+        self.anim_canvas.create_text(
+            x_ext, y, text="EXT", fill="white", font=("Arial", 10, "bold")
+        )
+
+        # Arrows (Gray)
+        self.anim_canvas.create_line(
+            x_sd + r + 5,
+            y,
+            x_int - r - 5,
+            y,
+            fill="#444",
+            arrow=tk.LAST,
+            width=2,
+            tags="arrow_1",
+        )
+        self.anim_canvas.create_line(
+            x_int + r + 5,
+            y,
+            x_ext - r - 5,
+            y,
+            fill="#444",
+            arrow=tk.LAST,
+            width=2,
+            tags="arrow_2",
+        )
+
+    def animate_flow(self, step="idle"):
+        """
+        Updates animation to show active flow.
+        step: 'idle', 'import' (SD->Int), 'export' (Int->Ext), 'clean' (Int X)
+        """
+        self.draw_anim_static()  # Reset base
+        w = self.anim_canvas.winfo_width()
+        if w < 100:
+            w = 600
+        h = 80
+        y = h // 2
+        x_sd = w * 0.15
+        x_int = w * 0.5
+        x_ext = w * 0.85
+        r = 25
+
+        if step == "import":
+            # Highlight Arrow 1 and SD/Int
+            self.anim_canvas.itemconfig("node_sd", fill="#ff9900")
+            self.anim_canvas.itemconfig("node_int", outline="white")
+            self.anim_canvas.itemconfig("arrow_1", fill="#ff9900", width=4)
+        elif step == "export":
+            # Highlight Arrow 2 and Int/Ext
+            self.anim_canvas.itemconfig("node_int", fill="#3399ff")
+            self.anim_canvas.itemconfig("node_ext", outline="white")
+            self.anim_canvas.itemconfig("arrow_2", fill="#00cc66", width=4)
+        elif step == "clean":
+            # Red flash on PC
+            self.anim_canvas.itemconfig("node_int", fill="#aa0000")
+            self.anim_canvas.create_text(
+                x_int, y - 35, text="CLEANING", fill="#ff5555", font=("Arial", 8)
+            )
+
+    def update_status(self, msg):
+        self.after(0, lambda: self._update_status_ui(msg))
+
+    def _update_status_ui(self, msg):
+        self.lbl_status.configure(text=msg)
+        # Also log key status milestones
+        if "Importando" in msg or "Respaldando" in msg or "Copia" in msg:
+            # Don't flood log with every file if possible, but for now we log everything or filter.
+            # User requested log area.
+            # Let's log major events or use a separate call for detailed logging.
+            # For this task, I'll log all update_status calls to the text area too.
+            self.log_message(msg)
+
+        # Trigger Animation based on text keywords (Simple parsing for V1)
+        if "Importando" in msg:
+            self.animate_flow("import")
+        elif "Respaldando" in msg:
+            self.animate_flow("export")
+        elif "borrar" in msg.lower() or "guardada" in msg:
+            self.animate_flow("clean")
+        else:
+            self.animate_flow("idle")
 
     def update_local_space(self):
         try:
@@ -370,6 +588,7 @@ class BackupCameraApp(ctk.CTk):
             )
             self.lbl_dest_space.configure(text="")
             self.btn_backup.configure(state="disabled")
+            self.btn_bridge.configure(state="disabled")
         else:
             # Pick first available
             target = drives[0]
@@ -388,6 +607,11 @@ class BackupCameraApp(ctk.CTk):
                 self.lbl_dest_space.configure(text="?")
 
             self.btn_backup.configure(state="normal")
+
+            # Bridge mode requires Source + Destination
+            if self.selected_source:
+                self.btn_bridge.configure(state="normal")
+
             self.backup_target = target
 
     def start_backup(self):
@@ -411,6 +635,38 @@ class BackupCameraApp(ctk.CTk):
         self.lbl_dest_info.configure(text="Sincronizando...")
 
         worker = BackupWorker(self.local_repo, self.backup_target, self)
+        worker.start()
+
+    def start_bridge(self):
+        if not self.selected_source or not self.backup_target:
+            return
+
+        # Get HW ID for folder naming
+        hw_id = get_real_hardware_id(self.selected_source)
+        if not hw_id:
+            messagebox.showerror("Error", "No se pudo validar el ID de Hardware (SD).")
+            return
+
+        # Confirm Action
+        if not messagebox.askyesno(
+            "Confirmar Modo Puente",
+            "ESTE MODO OPTIMIZA SEGURIDAD.\n\n1. Copia SD -> Disco Interno.\n2. Si hay espacio, MANTIENE la copia interna (Backup).\n3. Si NO hay espacio, procesa por trozos y BORRA la interna.\n4. Finalmente copia a Externo.\n\n¿Desea continuar?",
+        ):
+            return
+
+        # Disable UI
+        self.btn_start.configure(state="disabled")
+        self.btn_backup.configure(state="disabled")
+        self.btn_bridge.configure(state="disabled")
+        self.option_source.configure(state="disabled")
+        self.progress_bar.set(0)
+
+        self.lbl_status.configure(text="Iniciando Puente...")
+
+        # Start Bridge Worker
+        worker = BridgeWorker(
+            self.selected_source, self.local_repo, self.backup_target, self
+        )
         worker.start()
 
     def backup_complete(self, count):
@@ -476,8 +732,13 @@ class BackupCameraApp(ctk.CTk):
 
         if hw_id:
             self.btn_start.configure(state="normal")
+
+            # Enable Bridge if Backup Target is also present
+            if hasattr(self, "backup_target") and self.backup_target:
+                self.btn_bridge.configure(state="normal")
         else:
             self.btn_start.configure(state="disabled")  # Require valid WMI ID
+            self.btn_bridge.configure(state="disabled")
 
     def start_ingest(self):
         if not self.selected_source:
@@ -503,6 +764,7 @@ class BackupCameraApp(ctk.CTk):
 
         # UI Lock
         self.btn_start.configure(state="disabled")
+        self.btn_bridge.configure(state="disabled")
         self.option_source.configure(state="disabled")
         self.progress_bar.set(0)
 
@@ -528,6 +790,17 @@ class BackupCameraApp(ctk.CTk):
 
     def _ingest_complete_ui(self, path):
         self.btn_start.configure(state="normal")
+        # Check if we should re-enable bridge
+        if (
+            self.selected_source
+            and hasattr(self, "backup_target")
+            and self.backup_target
+        ):
+            self.btn_bridge.configure(state="normal")
+        elif hasattr(self, "backup_target") and self.backup_target:
+            # Just backup button
+            self.btn_backup.configure(state="normal")
+
         self.option_source.configure(state="normal")
         self.lbl_status.configure(text="¡Ingesta Completada!")
         messagebox.showinfo("Éxito", f"Copia segura finalizada en:\n{path}")
@@ -537,6 +810,12 @@ class BackupCameraApp(ctk.CTk):
 
     def _ingest_failed_ui(self, error_msg):
         self.btn_start.configure(state="normal")
+        # Restore button states broadly
+        if hasattr(self, "backup_target") and self.backup_target:
+            self.btn_backup.configure(state="normal")
+            if self.selected_source:
+                self.btn_bridge.configure(state="normal")
+
         self.option_source.configure(state="normal")
         self.lbl_status.configure(text="Error en Ingesta")
         messagebox.showerror("Falló la Ingesta", error_msg)
