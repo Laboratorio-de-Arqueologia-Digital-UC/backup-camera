@@ -1,3 +1,9 @@
+## v2.0.2 (2026-01-10)
+
+### Fix
+
+- **env**: update uv.lock to match current environment
+
 ## v2.0.1 (2026-01-10)
 
 ### Fix
