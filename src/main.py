@@ -685,7 +685,8 @@ class BackupCameraApp(ctk.CTk):
         self.after(0, lambda: self._update_source_ui(drives))
 
     def _update_source_ui(self, drives):
-        values = [f"{d['letter']} ({d['label']})" for d in drives]
+        # Update display to show Type (SD, USB, etc.)
+        values = [f"{d['letter']} ({d['label']}) [{d.get('type', 'Drive')}]" for d in drives]
         if not values:
             self.lbl_source_info.configure(text="No se detectan tarjetas SD")
             self.option_source.configure(values=["Sin Origen"])

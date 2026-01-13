@@ -18,7 +18,7 @@
 En la fotogrametría arqueológica, la integridad de los datos es crítica. **Backup Camera** elimina la incertidumbre en el proceso de descarga de tarjetas de memoria, transformando una copia simple en un proceso auditado.
 
 **Características Clave:**
-*   **Identificación de Hardware (WMI):** Vincula los datos al número de serie físico de la tarjeta SD, no a la letra de la unidad.
+*   **Identificación de Hardware Universal (WMI):** Vincula los datos al número de serie físico, soportando tanto USB como lectores internos (PCIe/SCSI) y detectando tipos de tarjeta (SD, SDXC, MicroSD).
 *   **Hashing al Vuelo (BLAKE3):** Verifica la integridad de cada byte copiado sin sacrificar velocidad.
 *   **Hashing al Vuelo (BLAKE3):** Verifica la integridad de cada byte copiado sin sacrificar velocidad.
 *   **Protocolo de Doble Salto:** Fuerza un flujo de trabajo seguro: Tarjeta SD -> SSD Local -> Disco Externo (Redundancia).
