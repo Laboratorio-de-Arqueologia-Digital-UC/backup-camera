@@ -63,10 +63,10 @@ El sistema está diseñado con una interfaz de "Semáforo" de 3 paneles.
 uv run python src/main.py
 
 # O ejecutando el binario generado en /dist
-dist/BackupCamera_v1.1.0.exe
+dist/BackupCamera_v3.0.0.exe
 ```
 
-### Interfaz Renovada (v2.0)
+### Interfaz Renovada (v3.0)
 El sistema presenta una interfaz organizada en 3 niveles:
 1.  **Nivel Superior (Operación Estándar):** Paneles de Origen, Ingesta y Respaldo.
 2.  **Nivel Medio (Operación Avanzada):** Controles del "Modo Puente" y visualización gráfica del flujo de datos en tiempo real.
@@ -136,9 +136,9 @@ Siga las instrucciones interactivas para clasificar su cambio (`feat`, `fix`, `d
 ### Releases Automáticos
 Para generar una nueva versión distribuible:
 1.  Actualice la versión en `pyproject.toml`.
-2.  Cree un tag en git: `git tag v0.1.0` (debe coincidir con la versión).
-3.  Empuje el tag: `git push origin v0.1.0`.
-4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v0.1.0.exe` y lo publicará en la sección **Releases**.
+2.  Cree un tag en git: `git tag v3.0.0` (debe coincidir con la versión).
+3.  Empuje el tag: `git push origin v3.0.0`.
+4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v3.0.0.exe` y lo publicará en la sección **Releases**.
 
 ## ✍️ Autores
 

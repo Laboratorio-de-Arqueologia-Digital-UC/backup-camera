@@ -12,7 +12,7 @@ Values standardized commit messages to ensure clean history and automated change
 - **Versioning**: Semantic Versioning managed by `pyproject.toml`.
 - **Build System**: `build.py` automatically reads the version and names the artifact `BackupCamera_vX.Y.Z.exe`.
 - **CI/CD**:
-    - **Trigger**: Pushing a tag (`git tag v1.0.0` -> `git push origin v1.0.0`).
+    - **Trigger**: Pushing a tag (`git tag v3.0.0` -> `git push origin v3.0.0`).
     - **Action**: `.github/workflows/release.yml` builds the executable and creates a GitHub Release with the artifact.
 
 ## 1. Project Overview & Architecture
