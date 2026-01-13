@@ -1,3 +1,13 @@
+## v3.0.0 (2026-01-13)
+
+### BREAKING CHANGE
+
+-  to support internal PCIe/SCSI SD readers by
+
+### Fix
+
+- **implementation-for-robust-memory-card-detection**: feat(hardware): support for internal SD readers and card type detection
+
 ## v2.0.2 (2026-01-10)
 
 ### Fix
