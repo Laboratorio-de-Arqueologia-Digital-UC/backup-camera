@@ -57,7 +57,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pyinstaller", specifier = ">=6.0.0" },
     { name = "pyright", specifier = ">=1.1.407" },
-    { name = "ruff", specifier = ">=0.14.10" },
+    { name = "ruff", specifier = ">=0.14.11" },
     { name = "wmi", specifier = ">=1.5.1" },
 ]
 
