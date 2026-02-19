@@ -360,8 +360,10 @@ class BackupCameraApp(ctk.CTk):
             self.frame_archive, text="Destino Final:", font=("Arial", 12)
         )
         self.lbl_archive_info.pack(pady=(10, 0))
-        
-        self.entry_archive_dest = ctk.CTkEntry(self.frame_archive, placeholder_text="Z:\\Archivo")
+
+        self.entry_archive_dest = ctk.CTkEntry(
+            self.frame_archive, placeholder_text="Z:\\Archivo"
+        )
         self.entry_archive_dest.pack(pady=5, padx=10, fill="x")
         # Default value for demo/convenience
         self.entry_archive_dest.insert(0, "Z:\\Archivo_Arqueologia")
@@ -377,7 +379,7 @@ class BackupCameraApp(ctk.CTk):
         self.btn_select_archive.pack(pady=5)
 
         self.lbl_archive_status = ctk.CTkLabel(
-             self.frame_archive, text="", font=("Arial", 12), text_color="gray"
+            self.frame_archive, text="", font=("Arial", 12), text_color="gray"
         )
         self.lbl_archive_status.pack(pady=10)
 
@@ -387,10 +389,10 @@ class BackupCameraApp(ctk.CTk):
             command=self.start_archive,
             state="disabled",
             fg_color="#800080",
-            height=50
+            height=50,
         )
         self.btn_archive.pack(pady=20)
-        
+
         self.archive_progress = ctk.CTkProgressBar(self.frame_archive)
         self.archive_progress.set(0)
         self.archive_progress.pack(pady=10, padx=20, fill="x")
@@ -661,7 +663,7 @@ class BackupCameraApp(ctk.CTk):
                 self.lbl_dest_space.configure(text="?")
 
             self.btn_backup.configure(state="normal")
-            
+
             # Enable Archive if we have a backup source (External Drive)
             self.btn_archive.configure(state="normal")
 
@@ -854,7 +856,7 @@ class BackupCameraApp(ctk.CTk):
         elif hasattr(self, "backup_target") and self.backup_target:
             # Just backup button
             self.btn_backup.configure(state="normal")
-            
+
     # --- ARCHIVE MODULE METHODS ---
 
     def select_archive_dest(self):
@@ -865,27 +867,33 @@ class BackupCameraApp(ctk.CTk):
 
     def start_archive(self):
         # Source for Archiving is the External Drive (Panel 3)
-        if not hasattr(self, 'backup_target') or not self.backup_target:
-             messagebox.showerror("Error", "No hay disco externo conectado (Origen para Archivo).")
-             return
-             
+        if not hasattr(self, "backup_target") or not self.backup_target:
+            messagebox.showerror(
+                "Error", "No hay disco externo conectado (Origen para Archivo)."
+            )
+            return
+
         dest_root = self.entry_archive_dest.get()
         if not dest_root or not os.path.exists(dest_root):
-             # Try verify write access or existence
-             try:
-                 os.makedirs(dest_root, exist_ok=True)
-             except Exception as e:
-                 messagebox.showerror("Error", f"Ruta de archivo inválida o sin permisos: {e}")
-                 return
+            # Try verify write access or existence
+            try:
+                os.makedirs(dest_root, exist_ok=True)
+            except Exception as e:
+                messagebox.showerror(
+                    "Error", f"Ruta de archivo inválida o sin permisos: {e}"
+                )
+                return
 
-        if not messagebox.askyesno("Confirmar Archivo", 
-                                   f"Se procederá a validar y mover datos desde:\n{self.backup_target}\n\nHacia:\n{dest_root}\n\n¿Desea continuar?"):
+        if not messagebox.askyesno(
+            "Confirmar Archivo",
+            f"Se procederá a validar y mover datos desde:\n{self.backup_target}\n\nHacia:\n{dest_root}\n\n¿Desea continuar?",
+        ):
             return
 
         self.btn_archive.configure(state="disabled")
         self.archive_progress.set(0)
         self.lbl_archive_status.configure(text="Iniciando auditoría...")
-        
+
         # Start Worker
         self.archive_worker = ArchiveWorker(self.backup_target, dest_root, self)
         self.archive_worker.start()
@@ -907,7 +915,9 @@ class BackupCameraApp(ctk.CTk):
     def _archive_complete_ui(self, count):
         self.btn_archive.configure(state="normal")
         self.lbl_archive_status.configure(text="Proceso Finalizado")
-        messagebox.showinfo("Archivo Final", f"Proceso completado.\nSesiones procesadas: {count}")
+        messagebox.showinfo(
+            "Archivo Final", f"Proceso completado.\nSesiones procesadas: {count}"
+        )
 
     def archive_failed(self, err):
         self.after(0, lambda: self._archive_failed_ui(err))
@@ -917,10 +927,8 @@ class BackupCameraApp(ctk.CTk):
         self.lbl_archive_status.configure(text="Error")
         messagebox.showerror("Error de Archivo", err)
 
-
         self.option_source.configure(state="normal")
         self.lbl_status.configure(text="¡Ingesta Completada!")
-
 
     def ingest_failed(self, error_msg):
         self.after(0, lambda: self._ingest_failed_ui(error_msg))
