@@ -3,12 +3,12 @@ import json
 import time
 import logging
 import threading
-from tkinter import messagebox
-from lib_copy import secure_copy, verify_hash
+
+from lib_copy import secure_copy
 
 class ArchiveWorker(threading.Thread):
     def __init__(self, src_root, dest_root, app):
-        """
+        r"""
         Worker to archive data from External Drive to Final Storage.
         
         Args:
@@ -134,7 +134,7 @@ class ArchiveWorker(threading.Thread):
                         audit.write(f"Archive Timestamp: {time.ctime()}\n")
                         audit.write(f"Source: {src_session_path}\n")
                         audit.write("Status: VERIFIED OK\n")
-                        audit.write(f"Verified against original manifest hashes.\n")
+                        audit.write("Verified against original manifest hashes.\n")
                     
                     processed_count += 1
                 else:

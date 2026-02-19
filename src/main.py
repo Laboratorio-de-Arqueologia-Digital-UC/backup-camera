@@ -920,7 +920,7 @@ class BackupCameraApp(ctk.CTk):
 
         self.option_source.configure(state="normal")
         self.lbl_status.configure(text="¡Ingesta Completada!")
-        messagebox.showinfo("Éxito", f"Copia segura finalizada en:\n{path}")
+
 
     def ingest_failed(self, error_msg):
         self.after(0, lambda: self._ingest_failed_ui(error_msg))
