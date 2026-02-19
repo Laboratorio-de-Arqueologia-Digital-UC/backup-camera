@@ -18,7 +18,9 @@ from lib_storage import (
     generate_folder_name,
     check_duplicate_ingest,
 )
+
 from lib_bridge import BridgeWorker
+from lib_archive import ArchiveWorker
 
 # Configure Logging
 logging.basicConfig(
@@ -205,12 +207,13 @@ class BackupCameraApp(ctk.CTk):
         super().__init__()
 
         self.title("Backup Camera - Ingesta Forense")
-        self.geometry("1000x600")
+        self.geometry("1400x650")  # Wider for 4 columns
         ctk.set_appearance_mode("Dark")
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(2, weight=1)
+        self.grid_columnconfigure(3, weight=1)  # New Column for Archive
 
         # Row 0: Main Panels (Weight 3)
         self.grid_rowconfigure(0, weight=3)
@@ -341,6 +344,57 @@ class BackupCameraApp(ctk.CTk):
         )
         self.btn_backup.pack(pady=10)
 
+        # --- PANEL 4: ARCHIVE (Purple/Red) ---
+        self.frame_archive = ctk.CTkFrame(self, fg_color="#3b1a3b")  # Dark Purple
+        self.frame_archive.grid(row=0, column=3, sticky="nsew", padx=5, pady=5)
+
+        self.lbl_archive_title = ctk.CTkLabel(
+            self.frame_archive,
+            text="4. ARCHIVO FINAL",
+            font=("Arial", 20, "bold"),
+            text_color="#d633ff",
+        )
+        self.lbl_archive_title.pack(pady=20)
+
+        self.lbl_archive_info = ctk.CTkLabel(
+            self.frame_archive, text="Destino Final:", font=("Arial", 12)
+        )
+        self.lbl_archive_info.pack(pady=(10, 0))
+        
+        self.entry_archive_dest = ctk.CTkEntry(self.frame_archive, placeholder_text="Z:\\Archivo")
+        self.entry_archive_dest.pack(pady=5, padx=10, fill="x")
+        # Default value for demo/convenience
+        self.entry_archive_dest.insert(0, "Z:\\Archivo_Arqueologia")
+
+        self.btn_select_archive = ctk.CTkButton(
+            self.frame_archive,
+            text="Seleccionar...",
+            command=self.select_archive_dest,
+            width=100,
+            height=24,
+            fg_color="#554466",
+        )
+        self.btn_select_archive.pack(pady=5)
+
+        self.lbl_archive_status = ctk.CTkLabel(
+             self.frame_archive, text="", font=("Arial", 12), text_color="gray"
+        )
+        self.lbl_archive_status.pack(pady=10)
+
+        self.btn_archive = ctk.CTkButton(
+            self.frame_archive,
+            text="ARCHIVAR Y VALIDAR",
+            command=self.start_archive,
+            state="disabled",
+            fg_color="#800080",
+            height=50
+        )
+        self.btn_archive.pack(pady=20)
+        
+        self.archive_progress = ctk.CTkProgressBar(self.frame_archive)
+        self.archive_progress.set(0)
+        self.archive_progress.pack(pady=10, padx=20, fill="x")
+
         # Bridge Mode Button (New)
         self.btn_bridge = ctk.CTkButton(
             self.frame_dest,
@@ -355,7 +409,7 @@ class BackupCameraApp(ctk.CTk):
         # --- ROW 1: BRIDGE & ANIMATION ---
         self.frame_bridge = ctk.CTkFrame(self, fg_color="#2b2b2b")
         self.frame_bridge.grid(
-            row=1, column=0, columnspan=3, sticky="nsew", padx=5, pady=5
+            row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=5
         )
 
         self.frame_bridge.grid_columnconfigure(0, weight=0)  # Button
@@ -388,7 +442,7 @@ class BackupCameraApp(ctk.CTk):
         # --- ROW 2: REPORT LOG ---
         self.frame_report = ctk.CTkFrame(self, height=80, fg_color="black")
         self.frame_report.grid(
-            row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=(0, 5)
+            row=2, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5)
         )
 
         self.log_text = ctk.CTkTextbox(
@@ -607,6 +661,9 @@ class BackupCameraApp(ctk.CTk):
                 self.lbl_dest_space.configure(text="?")
 
             self.btn_backup.configure(state="normal")
+            
+            # Enable Archive if we have a backup source (External Drive)
+            self.btn_archive.configure(state="normal")
 
             # Bridge mode requires Source + Destination
             if self.selected_source:
@@ -797,6 +854,69 @@ class BackupCameraApp(ctk.CTk):
         elif hasattr(self, "backup_target") and self.backup_target:
             # Just backup button
             self.btn_backup.configure(state="normal")
+            
+    # --- ARCHIVE MODULE METHODS ---
+
+    def select_archive_dest(self):
+        d = ctk.filedialog.askdirectory(title="Seleccionar Depósito Final")
+        if d:
+            self.entry_archive_dest.delete(0, "end")
+            self.entry_archive_dest.insert(0, d)
+
+    def start_archive(self):
+        # Source for Archiving is the External Drive (Panel 3)
+        if not hasattr(self, 'backup_target') or not self.backup_target:
+             messagebox.showerror("Error", "No hay disco externo conectado (Origen para Archivo).")
+             return
+             
+        dest_root = self.entry_archive_dest.get()
+        if not dest_root or not os.path.exists(dest_root):
+             # Try verify write access or existence
+             try:
+                 os.makedirs(dest_root, exist_ok=True)
+             except Exception as e:
+                 messagebox.showerror("Error", f"Ruta de archivo inválida o sin permisos: {e}")
+                 return
+
+        if not messagebox.askyesno("Confirmar Archivo", 
+                                   f"Se procederá a validar y mover datos desde:\n{self.backup_target}\n\nHacia:\n{dest_root}\n\n¿Desea continuar?"):
+            return
+
+        self.btn_archive.configure(state="disabled")
+        self.archive_progress.set(0)
+        self.lbl_archive_status.configure(text="Iniciando auditoría...")
+        
+        # Start Worker
+        self.archive_worker = ArchiveWorker(self.backup_target, dest_root, self)
+        self.archive_worker.start()
+
+    def update_archive_status(self, msg):
+        self.after(0, lambda: self.lbl_archive_status.configure(text=msg))
+        self.log_message(f"[ARCHIVO] {msg}")
+
+    def update_archive_progress(self, val, msg):
+        self.after(0, lambda: self._update_archive_progress_ui(val, msg))
+
+    def _update_archive_progress_ui(self, val, msg):
+        self.archive_progress.set(val)
+        self.lbl_archive_status.configure(text=msg)
+
+    def archive_complete(self, count):
+        self.after(0, lambda: self._archive_complete_ui(count))
+
+    def _archive_complete_ui(self, count):
+        self.btn_archive.configure(state="normal")
+        self.lbl_archive_status.configure(text="Proceso Finalizado")
+        messagebox.showinfo("Archivo Final", f"Proceso completado.\nSesiones procesadas: {count}")
+
+    def archive_failed(self, err):
+        self.after(0, lambda: self._archive_failed_ui(err))
+
+    def _archive_failed_ui(self, err):
+        self.btn_archive.configure(state="normal")
+        self.lbl_archive_status.configure(text="Error")
+        messagebox.showerror("Error de Archivo", err)
+
 
         self.option_source.configure(state="normal")
         self.lbl_status.configure(text="¡Ingesta Completada!")

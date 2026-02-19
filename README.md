@@ -20,8 +20,7 @@ En la fotogrametría arqueológica, la integridad de los datos es crítica. **Ba
 **Características Clave:**
 *   **Identificación de Hardware Universal (WMI):** Vincula los datos al número de serie físico, soportando tanto USB como lectores internos (PCIe/SCSI) y detectando tipos de tarjeta (SD, SDXC, MicroSD).
 *   **Hashing al Vuelo (BLAKE3):** Verifica la integridad de cada byte copiado sin sacrificar velocidad.
-*   **Hashing al Vuelo (BLAKE3):** Verifica la integridad de cada byte copiado sin sacrificar velocidad.
-*   **Protocolo de Doble Salto:** Fuerza un flujo de trabajo seguro: Tarjeta SD -> SSD Local -> Disco Externo (Redundancia).
+*   **Protocolo de Cuatro Pasos:** Flujo de trabajo seguro: SD -> Local -> Externo -> Archivo Final (Servidor/NAS).
 *   **Modo Puente (Bridge):** Permite la copia desde SD a Disco Externo utilizando el disco interno como búfer temporal inteligente/volátil, ideal para equipos con poco espacio de almacenamiento.
 
 ## 🛠️ Instalación
@@ -66,26 +65,24 @@ uv run python src/main.py
 dist/BackupCamera_v3.0.0.exe
 ```
 
-### Interfaz Renovada (v3.0)
-El sistema presenta una interfaz organizada en 3 niveles:
-1.  **Nivel Superior (Operación Estándar):** Paneles de Origen, Ingesta y Respaldo.
-2.  **Nivel Medio (Operación Avanzada):** Controles del "Modo Puente" y visualización gráfica del flujo de datos en tiempo real.
-3.  **Nivel Inferior (Reportes):** Bitácora detallada de operaciones.
+### Interfaz Renovada (v3.1)
+El sistema presenta una interfaz panorámica de **4 Columnas**:
+1.  **Origen (Naranja):** Detección de Tarjetas SD.
+2.  **Ingesta (Azul):** Transferencia segura a PC Local.
+3.  **Respaldo (Verde):** Clonación a Disco Externo.
+4.  **Archivo Final (Púrpura):** Auditoría y transferencia a Servidor/NAS.
+
+### Nivel "Modo Puente"
+Se activa automáticamente cuando el espacio en disco local es insuficiente. Permite la copia segura desde SD a Disco Externo utilizando el disco interno como búfer temporal volátil.
 
 ### Flujo de Trabajo
-1.  **Panel 1 (Naranja - Origen):** Inserte la tarjeta SD. El sistema validará su ID de hardware automáticamente.
-2.  **Panel 2 (Azul - Ingesta):** Presione "INICIAR COPIA". Los datos se transfieren y verifican al repositorio local.
-3.  **Panel 3 (Verde - Respaldo):** Conecte el disco externo.
-    > **IMPORTANTE:** El disco externo DEBE tener un archivo vacío llamado `.backup_drive` en su raíz para ser detectado (medida de seguridad).
-3.  **Panel 3 (Verde - Respaldo):** Conecte el disco externo.
-    > **IMPORTANTE:** El disco externo DEBE tener un archivo vacío llamado `.backup_drive` en su raíz para ser detectado (medida de seguridad).
-    Presione "CLONAR".
+1.  **Columna 1:** Inserte la tarjeta SD. El sistema valida ID de hardware.
+2.  **Columna 2:** "INICIAR COPIA". Ingesta verificada a repositorio local.
+3.  **Columna 3:** Conecte disco externo (con archivo `.backup_drive`). "CLONAR".
+4.  **Columna 4:** Seleccione ruta final (ej. `Z:\Proyecto`). "ARCHIVAR Y VALIDAR".
+    -   El sistema verificará que los datos en `Z:\` coincidan exactamente con el `manifest.json` original de la tarjeta SD.
 
-### Modo Puente (Nivel Medio)
-Si necesita liberar la tarjeta SD rápidamente y no dispone de espacio suficiente en el disco local para una copia permanente:
-1.  Conecte SD y Disco Externo.
-2.  Presione **"MODO PUENTE"**.
-3.  El sistema copiará por bloques ("chunks") de la SD al Disco Interno (Temp) y luego al Externo, borrando la copia temporal si es necesario para ahorrar espacio.
+
 
 ## 📂 Estructura del Proyecto
 

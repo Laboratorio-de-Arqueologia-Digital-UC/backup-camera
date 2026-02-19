@@ -27,10 +27,11 @@ Values standardized commit messages to ensure clean history and automated change
     - `blake3`: For cryptographic hashing (faster than SHA-256).
     - `shutil`: For optimized file operations.
 
-### Critical Logic: "Double Hop"
-The system strictly enforces a two-step process:
+### Critical Logic: "Quadruple Hop" (Updated v3.1)
+The system strictly enforces a four-step process for total traceability:
 1.  **Ingest**: SD Card -> Local SSD (Verification + Hashing).
 2.  **Backup**: Local SSD -> External Drive (Cloning).
+3.  **Archive**: External Drive -> Final Storage (Audit + Integrity Check).
 
 > [!NOTE]
 > **Safety Mechanism**: External drives are ONLY recognized if they contain a root file named `.backup_drive`. This prevents accidental cloning to the wrong drive.
@@ -47,6 +48,16 @@ Introduced in v1.1.0 to handle scenarios where `Size(SD Card) > FreeSpace(Intern
         -   `Internal (Temp) -> External -> Verify Hash`
         -   `Delete Internal (Temp)`
 3.  **Safety**: Always preserves a 2GB buffer on the internal OS drive.
+
+### Final Archive Module (v3.1)
+Introduced to close the cycle from Field to Lab/Server.
+-   **Input**: External Drives (with `.backup_drive` and `Backup_Ingesta` folder).
+-   **Output**: Network Storage / Final Deposit.
+-   **Validation**:
+    -   Does NOT re-hash blindly.
+    -   Calculates the hash of the file arriving at the Final Storage.
+    -   Compares it against the **Original Manifest** created during Ingest.
+    -   **Outcome**: Generates an `audit_log.txt` certifying that the file on the Server is bit-exact to the file that left the SD Card.
 
 ## 2. Environment & Tooling (UV)
 
