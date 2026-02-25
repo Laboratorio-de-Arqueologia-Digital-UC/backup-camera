@@ -729,9 +729,7 @@ class BackupCameraApp(ctk.CTk):
         self.lbl_status.configure(text="Iniciando Puente...")
 
         # Start Bridge Worker
-        worker = BridgeWorker(
-            self.selected_source, self.local_repo, target_ext, self
-        )
+        worker = BridgeWorker(self.selected_source, self.local_repo, target_ext, self)
         worker.start()
 
     def backup_complete(self, count):

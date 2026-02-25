@@ -254,15 +254,17 @@ class BridgeWorker(threading.Thread):
                     # Rename _BRIDGE_TEMP to match the session name in self.external_path
                     session_name = os.path.basename(self.external_path)
                     final_path = os.path.join(self.internal_repo, session_name)
-                    
+
                     if os.path.exists(final_path):
                         # If somehow it exists, add unique suffix
                         final_path += f"_{int(time.time())}"
-                    
+
                     if os.path.exists(bridge_temp_dir):
                         shutil.move(bridge_temp_dir, final_path)
 
-                    self.app.update_status(f"Copia interna guardada en: {os.path.basename(final_path)}")
+                    self.app.update_status(
+                        f"Copia interna guardada en: {os.path.basename(final_path)}"
+                    )
                 except Exception as e:
                     logging.error(f"Error renaming persisted bridge folder: {e}")
             else:

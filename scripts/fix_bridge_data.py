@@ -1,13 +1,13 @@
 import os
 import shutil
-import json
 import datetime
 import string
+
 
 def get_drive_roots():
     """Busca discos extraíbles con el marcador .backup_drive y añade el repo local."""
     roots = []
-    
+
     # 1. Buscar discos externos
     available_drives = [
         "%s:" % d for d in string.ascii_uppercase if os.path.exists("%s:" % d)
@@ -15,13 +15,14 @@ def get_drive_roots():
     for drive in available_drives:
         if os.path.exists(os.path.join(drive, ".backup_drive")):
             roots.append(drive)
-    
+
     # 2. Añadir repositorio local estándar (Notebook)
     local_repo = "C:\\Backup_Ingesta"
     if os.path.exists(local_repo):
         roots.append(local_repo)
-        
-    return list(set(roots)) # Evitar duplicados si el externo está en C (raro)
+
+    return list(set(roots))  # Evitar duplicados si el externo está en C (raro)
+
 
 def fix_bridge_structure_in_root(root):
     print(f"\n🔍 Analizando: {root}")
@@ -50,7 +51,7 @@ def fix_bridge_structure_in_root(root):
     # 3. Determinar carpeta base de ingesta (en la misma unidad)
     # Si es el disco externo, suele ser 'Backup_Ingesta' o 'Back up ingesta'
     # Si es el local, la raíz YA ES 'C:\Backup_Ingesta'
-    
+
     if root.upper().startswith("C:\\BACKUP_INGESTA"):
         backup_ingesta_root = root
     else:
@@ -68,7 +69,7 @@ def fix_bridge_structure_in_root(root):
 
     # 4. Mover DCIM
     if os.path.exists(dcim_path):
-        print(f"➡️ Moviendo DCIM...")
+        print("➡️ Moviendo DCIM...")
         try:
             shutil.move(dcim_path, os.path.join(dest_session_path, "DCIM"))
         except Exception as e:
@@ -76,18 +77,23 @@ def fix_bridge_structure_in_root(root):
 
     # 5. Mover y Renombrar Manifest
     if manifest_source:
-        print(f"➡️ Moviendo y renombrando manifiesto...")
+        print("➡️ Moviendo y renombrando manifiesto...")
         try:
-            shutil.move(manifest_source, os.path.join(dest_session_path, "manifest.json"))
+            shutil.move(
+                manifest_source, os.path.join(dest_session_path, "manifest.json")
+            )
         except Exception as e:
             print(f"⚠️ Error moviendo manifiesto: {e}")
-            
+
     return True
+
 
 def main():
     roots = get_drive_roots()
     if not roots:
-        print("❌ No se encontró disco externo ni repositorio local 'C:\\Backup_Ingesta'.")
+        print(
+            "❌ No se encontró disco externo ni repositorio local 'C:\\Backup_Ingesta'."
+        )
         return
 
     any_fixed = False
@@ -99,6 +105,7 @@ def main():
         print("\n✨ ¡Proceso de limpieza completado!")
     else:
         print("\n✅ Todo parece estar en orden.")
+
 
 if __name__ == "__main__":
     main()
