@@ -124,6 +124,9 @@ class BridgeWorker(threading.Thread):
 
             processed_bytes_total = 0
 
+            # Create final target directory
+            os.makedirs(self.external_path, exist_ok=True)
+
             # Create a dedicated temp folder in internal repo to avoid clashes
             bridge_temp_dir = os.path.join(self.internal_repo, "_BRIDGE_TEMP")
             if os.path.exists(bridge_temp_dir):
@@ -247,19 +250,19 @@ class BridgeWorker(threading.Thread):
             # Only remove if we really wanted to delete everything.
             # If we are keeping internal, we should probably rename _BRIDGE_TEMP to a proper session name
             if self.keep_internal:
-                # Rename _BRIDGE_TEMP to standard name
-                # We need 'generate_folder_name' logic here ideally, or just timestamp.
-                # Let's assume standard behavior: Keep as is implies valid backup.
                 try:
-                    # Construct a proper name
-                    # We don't have the HW ID handy easily unless passed, or we assume generic.
-                    # Let's rename to "Respaldo_Puente_TIMESTAMP"
-                    final_name = f"Bridge_Sess_{int(time.time())}"
-                    final_path = os.path.join(self.internal_repo, final_name)
+                    # Rename _BRIDGE_TEMP to match the session name in self.external_path
+                    session_name = os.path.basename(self.external_path)
+                    final_path = os.path.join(self.internal_repo, session_name)
+                    
+                    if os.path.exists(final_path):
+                        # If somehow it exists, add unique suffix
+                        final_path += f"_{int(time.time())}"
+                    
                     if os.path.exists(bridge_temp_dir):
                         shutil.move(bridge_temp_dir, final_path)
 
-                    self.app.update_status(f"Copia interna guardada en: {final_name}")
+                    self.app.update_status(f"Copia interna guardada en: {os.path.basename(final_path)}")
                 except Exception as e:
                     logging.error(f"Error renaming persisted bridge folder: {e}")
             else:
@@ -269,7 +272,7 @@ class BridgeWorker(threading.Thread):
                     pass
 
             # Save Manifest
-            manifest_path = os.path.join(self.external_path, "manifest_bridge.json")
+            manifest_path = os.path.join(self.external_path, "manifest.json")
             with open(manifest_path, "w") as f:
                 json.dump(manifest, f, indent=4)
 

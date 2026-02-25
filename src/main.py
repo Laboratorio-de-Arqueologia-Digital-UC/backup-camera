@@ -706,10 +706,16 @@ class BackupCameraApp(ctk.CTk):
             messagebox.showerror("Error", "No se pudo validar el ID de Hardware (SD).")
             return
 
+        # 1. Generate naming based on hardware and time
+        session_folder = generate_folder_name(hw_id, self.local_repo)
+
+        # 2. Build final external path (nested): E:\Backup_Ingesta\YYYY-MM-DD_SD-SERIAL_HHMM
+        target_ext = os.path.join(self.backup_target, "Backup_Ingesta", session_folder)
+
         # Confirm Action
         if not messagebox.askyesno(
             "Confirmar Modo Puente",
-            "ESTE MODO OPTIMIZA SEGURIDAD.\n\n1. Copia SD -> Disco Interno.\n2. Si hay espacio, MANTIENE la copia interna (Backup).\n3. Si NO hay espacio, procesa por trozos y BORRA la interna.\n4. Finalmente copia a Externo.\n\n¿Desea continuar?",
+            f"ESTE MODO OPTIMIZA SEGURIDAD.\n\nSesión: {session_folder}\n\n1. Copia SD -> Disco Interno.\n2. Si hay espacio, MANTIENE la copia interna.\n3. Si NO hay espacio, procesa por trozos y BORRA la interna.\n4. Finalmente copia a Externo.\n\n¿Desea continuar?",
         ):
             return
 
@@ -724,7 +730,7 @@ class BackupCameraApp(ctk.CTk):
 
         # Start Bridge Worker
         worker = BridgeWorker(
-            self.selected_source, self.local_repo, self.backup_target, self
+            self.selected_source, self.local_repo, target_ext, self
         )
         worker.start()
 

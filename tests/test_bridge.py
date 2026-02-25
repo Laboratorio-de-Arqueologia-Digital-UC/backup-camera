@@ -71,7 +71,7 @@ def test_bridge_worker_success(mock_env):
     assert os.path.exists(os.path.join(external, "DCIM", "photo2.jpg"))
 
     # Verify Manifest
-    assert os.path.exists(os.path.join(external, "manifest_bridge.json"))
+    assert os.path.exists(os.path.join(external, "manifest.json"))
 
     # Verify Internal Temp is CLEAN
     bridge_temp = os.path.join(internal, "_BRIDGE_TEMP")
