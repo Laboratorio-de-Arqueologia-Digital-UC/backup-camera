@@ -4,8 +4,9 @@ import logging
 from pathlib import Path
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
 
 def generate_hashes_for_session(session_path):
     """
@@ -21,7 +22,7 @@ def generate_hashes_for_session(session_path):
     try:
         with open(manifest_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        
+
         files = data.get("files", [])
         if not files:
             return False, "Manifest contains no files"
@@ -34,14 +35,15 @@ def generate_hashes_for_session(session_path):
             if rel_path and file_hash:
                 name = os.path.basename(rel_path)
                 hashes[name] = file_hash
-        
+
         with open(hashes_path, "w", encoding="utf-8") as f:
             json.dump(hashes, f, indent=4)
-        
+
         return True, f"Generated {len(hashes)} hashes"
 
     except Exception as e:
         return False, str(e)
+
 
 def scan_and_fix(root_dir):
     """
@@ -50,7 +52,7 @@ def scan_and_fix(root_dir):
     """
     root_dir = Path(root_dir)
     logger.info(f"Scanning {root_dir} for session folders...")
-    
+
     found_count = 0
     fixed_count = 0
 
@@ -59,7 +61,7 @@ def scan_and_fix(root_dir):
             found_count += 1
             session_path = Path(root)
             hashes_path = session_path / "hashes_blake3.json"
-            
+
             if not hashes_path.exists():
                 success, msg = generate_hashes_for_session(session_path)
                 if success:
@@ -74,10 +76,17 @@ def scan_and_fix(root_dir):
     logger.info(f"Sessions found: {found_count}")
     logger.info(f"Hashes generated: {fixed_count}")
 
+
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Generate hashes_blake3.json from existing manifest.json files.")
-    parser.add_argument("directory", help="Root directory to scan (e.g., C:\\Backup_Ingesta or E:\\Backup_Ingesta)")
+
+    parser = argparse.ArgumentParser(
+        description="Generate hashes_blake3.json from existing manifest.json files."
+    )
+    parser.add_argument(
+        "directory",
+        help="Root directory to scan (e.g., C:\\Backup_Ingesta or E:\\Backup_Ingesta)",
+    )
     args = parser.parse_args()
 
     if os.path.exists(args.directory):
