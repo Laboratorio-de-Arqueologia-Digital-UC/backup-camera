@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 from lib_copy import secure_copy
+from lib_storage import save_hashes_blake3
 
 # Reusing some logic from lib_storage if accessible, otherwise re-implementing/moving
 # For now, minimal deps to keep it clean.
@@ -277,6 +278,9 @@ class BridgeWorker(threading.Thread):
             manifest_path = os.path.join(self.external_path, "manifest.json")
             with open(manifest_path, "w") as f:
                 json.dump(manifest, f, indent=4)
+
+            # Save flat hashes for subsequent pipeline
+            save_hashes_blake3(self.external_path, manifest["files"])
 
             self.app.ingest_complete(self.external_path)
 

@@ -17,6 +17,7 @@ from lib_storage import (
     check_destination_space,
     generate_folder_name,
     check_duplicate_ingest,
+    save_hashes_blake3,
 )
 
 from lib_bridge import BridgeWorker
@@ -149,8 +150,12 @@ class IngestWorker(threading.Thread):
                 )
 
             # Save Manifest
-            with open(os.path.join(self.dest_path, "manifest.json"), "w") as f:
+            manifest_path = os.path.join(self.dest_path, "manifest.json")
+            with open(manifest_path, "w") as f:
                 json.dump(manifest, f, indent=4)
+
+            # Save flat hashes for subsequent pipeline
+            save_hashes_blake3(self.dest_path, manifest["files"])
 
             self.app.ingest_complete(self.dest_path)
 

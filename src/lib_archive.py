@@ -5,6 +5,7 @@ import logging
 import threading
 
 from lib_copy import secure_copy
+from lib_storage import save_hashes_blake3
 
 
 class ArchiveWorker(threading.Thread):
@@ -142,6 +143,9 @@ class ArchiveWorker(threading.Thread):
                     secure_copy(
                         manifest_path, os.path.join(dest_session_path, "manifest.json")
                     )
+
+                    # Also ensure hashes_blake3.json is present for fotogrametria-pipeline
+                    save_hashes_blake3(dest_session_path, files_to_copy)
 
                     # Create Audit Log
                     audit_log_path = os.path.join(dest_session_path, "audit_log.txt")

@@ -1,6 +1,7 @@
 import os
 import logging
 import datetime
+import json
 
 
 def calculate_required_space(source_path):
@@ -76,3 +77,19 @@ def check_duplicate_ingest(repo_root, serial):
             return True, os.path.join(repo_root, item)
 
     return False, None
+
+
+def save_hashes_blake3(session_path, files):
+    """
+    Saves a flat JSON dictionary of {filename: hash} to hashes_blake3.json.
+    Used by subsequent stage (fotogrametria-pipeline).
+    """
+    hashes = {}
+    for f in files:
+        name = os.path.basename(f["path"])
+        hashes[name] = f["hash"]
+
+    output_path = os.path.join(session_path, "hashes_blake3.json")
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(hashes, f, indent=4)
+    return output_path
