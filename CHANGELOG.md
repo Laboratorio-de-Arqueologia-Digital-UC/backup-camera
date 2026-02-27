@@ -1,12 +1,17 @@
+## v3.1.1 (2026-02-27)
+
+### Style
+- **lint**: apply ruff formatting across codebase
+- **deps**: bump ruff to 0.14.11
+
+## v3.1.0 (2026-02-19)
+
+### Feat
+- **archive**: implement Final Archive module and 4-column UI
+- **fix**: bridge pathing and naming improvements
+- **docs**: update version references
+
 ## v3.0.0 (2026-01-13)
-
-### BREAKING CHANGE
-
--  to support internal PCIe/SCSI SD readers by
-
-### Fix
-
-- **implementation-for-robust-memory-card-detection**: feat(hardware): support for internal SD readers and card type detection
 
 ## v2.0.2 (2026-01-10)
 
