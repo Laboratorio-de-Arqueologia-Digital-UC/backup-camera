@@ -49,8 +49,11 @@ class BridgeWorker(threading.Thread):
 
             # 2. Check External Space (Final Destination)
             try:
-                # We need enough space for all data
-                total_ext, used_ext, free_ext = shutil.disk_usage(self.external_path)
+                # Require space for all data, check at the drive root to avoid FileNotFoundError
+                ext_root = os.path.splitdrive(self.external_path)[0]
+                ext_root = ext_root + "\\" if ext_root else self.external_path
+                total_ext, used_ext, free_ext = shutil.disk_usage(ext_root)
+                
                 if free_ext < total_source_bytes:
                     self.app.ingest_failed(
                         f"Espacio insuficiente en Externo. Req: {total_source_bytes / 1024**3:.2f}GB"
@@ -65,7 +68,9 @@ class BridgeWorker(threading.Thread):
             # Logic: If internal space allows, copy ALL at once (no chunking).
             # If not, use fixed chunks (e.g. 10GB) provided they fit.
             try:
-                total_int, used_int, free_int = shutil.disk_usage(self.internal_repo)
+                int_root = os.path.splitdrive(self.internal_repo)[0]
+                int_root = int_root + "\\" if int_root else self.internal_repo
+                total_int, used_int, free_int = shutil.disk_usage(int_root)
 
                 # Safety buffer of 2GB to avoid choking OS
                 safety_buffer = 2 * 1024**3
@@ -74,6 +79,13 @@ class BridgeWorker(threading.Thread):
                 if available_for_bridge <= 0:
                     self.app.ingest_failed(
                         "Espacio interno críticamente bajo. Libere espacio en C:."
+                    )
+                    return
+
+                max_file_size = max(item["size"] for item in file_list)
+                if max_file_size > available_for_bridge:
+                    self.app.ingest_failed(
+                        f"Un archivo ({max_file_size / 1024**3:.2f}GB) supera el espacio interno libre seguro para puente ({available_for_bridge / 1024**3:.2f}GB)."
                     )
                     return
 
@@ -126,7 +138,12 @@ class BridgeWorker(threading.Thread):
             processed_bytes_total = 0
 
             # Create final target directory
-            os.makedirs(self.external_path, exist_ok=True)
+            try:
+                os.makedirs(self.external_path, exist_ok=True)
+            except Exception as e:
+                logging.error(f"Error al crear la ruta externa: {e}")
+                self.app.ingest_failed("Error accediendo o creando ruta en disco externo.")
+                return
 
             # Create a dedicated temp folder in internal repo to avoid clashes
             bridge_temp_dir = os.path.join(self.internal_repo, "_BRIDGE_TEMP")

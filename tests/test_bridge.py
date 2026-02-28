@@ -84,15 +84,13 @@ def test_bridge_worker_insufficient_space(mock_env):
 
     # Mock disk_usage to return 0 free space on external
     with patch("shutil.disk_usage") as mock_du:
-        # Return total, used, free
-        # First call might be external or internal depending on implementation order
-        # lib_bridge checks external first usually
-        def side_effect(path):
-            if path == external:
-                return (1000, 1000, 0)  # 0 Free
-            return (1000000000, 0, 1000000000)
-
-        mock_du.side_effect = side_effect
+        # En pytest los temp path comparten drive root (C:\), por lo que
+        # splitdrive("..ext..")[0] y splitdrive("..int..")[0] son el mismo.
+        # Usando un side_effect secuencial resolvemos este problema:
+        mock_du.side_effect = [
+            (1000, 1000, 0),             # 1er llamado (External -> 0 Libre)
+            (10*1024**3, 0, 10*1024**3)  # 2do llamado (Internal -> 10GB Libre)
+        ]
 
         worker = BridgeWorker(src, internal, external, app)
         worker.run()

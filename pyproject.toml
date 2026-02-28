@@ -1,6 +1,6 @@
 [project]
 name = "backup-camera"
-version = "3.1.0"
+version = "3.1.1"
 description = "Forensic data ingestion tool for archaeological contexts"
 authors = [
     {name = "Archaeology Lab", email = "lab@example.com"},
