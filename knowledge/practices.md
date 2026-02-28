@@ -100,6 +100,11 @@ Formato recomendado para mensajes de commit:
 - `test`: tests
 - `chore`: mantenimiento
 
+### Automatización de Commits (Entornos sin TTY / Agentes)
+Cuando se usen herramientas como `commitizen` asistidas por pipelines CI/CD o Agentes Autónomos Inteligentes:
+- **Evitar prompts interactivos**: No invocar comandos que exijan selección con flechas (ej. `cz commit` a secas). Éstos bloquearán el flujo.
+- **Usar llamadas atómicas**: Inyectar los mensajes como parámetros (`cz commit -m "fix(scope): msg"`) o confiar en `git commit` estructurado adecuadamente; Commitizen será capaz de leer el historial con `cz changelog` posteriormente sin problemas.
+
 ### Estrategias de Branching
 
 - **GitHub Flow**: simple, ideal para deploy continuo

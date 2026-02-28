@@ -62,7 +62,7 @@ El sistema está diseñado con una interfaz de "Semáforo" de 3 paneles.
 uv run python src/main.py
 
 # O ejecutando el binario generado en /dist
-dist/BackupCamera_v3.0.0.exe
+dist/BackupCamera_v3.1.2.exe
 ```
 
 ### Interfaz Renovada (v3.1)
@@ -72,8 +72,9 @@ El sistema presenta una interfaz panorámica de **4 Columnas**:
 3.  **Respaldo (Verde):** Clonación a Disco Externo.
 4.  **Archivo Final (Púrpura):** Auditoría y transferencia a Servidor/NAS.
 
-### Nivel "Modo Puente"
-Se activa automáticamente cuando el espacio en disco local es insuficiente. Permite la copia segura desde SD a Disco Externo utilizando el disco interno como búfer temporal volátil.
+### Nivel "Modo Puente" (Mejorado v3.1.2)
+Se activa automáticamente cuando el espacio en disco local es insuficiente. Permite la copia segura desde SD a Disco Externo utilizando el disco interno como búfer temporal volátil fragmentado.
+**Seguridad Garantizada:** El sistema verifica recursivamente el tamaño del disco raíz y previene cuelgues del SO evaluando que ningún archivo individual sobrepase el espacio libre seguro.
 
 ### Flujo de Trabajo
 1.  **Columna 1:** Inserte la tarjeta SD. El sistema valida ID de hardware.
@@ -133,9 +134,9 @@ Siga las instrucciones interactivas para clasificar su cambio (`feat`, `fix`, `d
 ### Releases Automáticos
 Para generar una nueva versión distribuible:
 1.  Actualice la versión en `pyproject.toml`.
-2.  Cree un tag en git: `git tag v3.0.0` (debe coincidir con la versión).
-3.  Empuje el tag: `git push origin v3.0.0`.
-4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v3.0.0.exe` y lo publicará en la sección **Releases**.
+2.  Cree un tag en git: `git tag v3.1.2` (debe coincidir con la versión).
+3.  Empuje el tag: `git push origin v3.1.2`.
+4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v3.1.2.exe` y lo publicará en la sección **Releases**.
 
 ## ✍️ Autores
 

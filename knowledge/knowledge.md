@@ -80,6 +80,14 @@ This project is developed in a **UV (Ultraviolet)** Python environment. This is 
 
 ## 3. Learnings & Error Log
 
+### [Insight] Commitizen in Automated/Agentic Environments
+**Context**: Executing `uv run cz commit` implicitly triggers an interactive terminal UI (arrows/selection).
+**Constraint**: When run by autonomous agents, scripts without a real TTY, or CI/CD pipelines, this interactive prompt blocks execution indefinitely and causes process freezing.
+**Solution**: 
+1. Use explicit messaging to bypass the prompt: `uv run cz commit --message "feat: description" -m "extended..."`.
+2. Standard `git commit -m "..."` formatted correctly is also perfectly parsed by `cz` later.
+3. Avoid depending blindly on interactive commands like `cz bump` when Git histories might have been rewritten or tag states are inconsistent; use explicit version declarations instead.
+
 ### [Error] PyInstaller Module Not Found
 **Context**: Attempted to run `python build.py` immediately after coding.
 **Error**: `ModuleNotFoundError: No module named 'PyInstaller'`.
