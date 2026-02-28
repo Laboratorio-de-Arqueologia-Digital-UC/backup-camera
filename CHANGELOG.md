@@ -1,19 +1,33 @@
-## v3.1.0 (2026-02-27)
+## v3.1.2 (2026-02-27)
+
+### Fix
+
+- **bridge**: implement robust drive storage verification and chunk failure prevention
 
 ## v3.1.1 (2026-02-27)
 
-### Style
-- **lint**: apply ruff formatting across codebase
-- **deps**: bump ruff to 0.14.11
-
-## v3.1.0 (2026-02-19)
-
 ### Feat
-- **archive**: implement Final Archive module and 4-column UI
-- **fix**: bridge pathing and naming improvements
-- **docs**: update version references
+
+- implement Final Archive module, 4-column UI, and update docs (v3.1.0)
+
+### Fix
+
+- **style**: hashing
+- **feat**: hashing
+- **bridge**: fix bridge pathing, naming, and add enhanced recovery script
+- **bridge**: resolve misplaced paths, unify naming, and add recovery script
+- resolve undefined variable in main.py and linting issues in archive module
+- **documentation**: update version references to v3.0.0
 
 ## v3.0.0 (2026-01-13)
+
+### BREAKING CHANGE
+
+-  to support internal PCIe/SCSI SD readers by
+
+### Fix
+
+- **implementation-for-robust-memory-card-detection**: feat(hardware): support for internal SD readers and card type detection
 
 ## v2.0.2 (2026-01-10)
 
@@ -42,12 +56,6 @@
 - implement initial backup camera application including GUI, background workers, and core modules for hardware, copying, and storage management.
 
 ## v1.0.0 (2026-01-04)
-
-### 🚀 Mejoras (Improvements)
-
-*   **Verificación Robusta de Espacio en Modo Puente**: Ahora el sistema de ingestión verifica el espacio desde la raíz de la unidad destino evitando generar carpetas vacías antes de procesarse y corrigiendo el reporte de "Error verificando disco externo".
-*   **Protección Avanzada Modo Puente**: Se añadió un sistema de evitación de caídas del OS al impedir procesar archivos individuales unitarios que sean de un tamaño mayor al almacenamiento interno de puente libre disponible.
-*   **Extracción de EXIF Paralelizada**: El cálculo de metadatos EXIF se ha trasladado a un ThreadPoolExecutor, incrementando la velocidad de verificación notablemente.
 
 ### Fix
 
