@@ -866,6 +866,30 @@ class BackupCameraApp(ctk.CTk):
             # Just backup button
             self.btn_backup.configure(state="normal")
 
+        # Calcular información de la sesión copiada
+        try:
+            file_count = sum(len(files) for _, _, files in os.walk(path))
+            total_bytes = sum(
+                os.path.getsize(os.path.join(dp, f))
+                for dp, _, files in os.walk(path)
+                for f in files
+            )
+            size_mb = total_bytes / (1024 * 1024)
+            session_name = os.path.basename(path)
+            finished_at = time.strftime("%d/%m/%Y %H:%M:%S")
+        except Exception:
+            file_count, size_mb, session_name, finished_at = "?", 0, path, ""
+
+        messagebox.showinfo(
+            "Copia Completada",
+            f"La copia finalizó correctamente.\n\n"
+            f"Sesión:       {session_name}\n"
+            f"Archivos:     {file_count} archivo(s)\n"
+            f"Tamaño:       {size_mb:.1f} MB\n"
+            f"Destino:      {path}\n"
+            f"Finalizado:   {finished_at}",
+        )
+
     # --- ARCHIVE MODULE METHODS ---
 
     def select_archive_dest(self):

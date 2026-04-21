@@ -1,6 +1,6 @@
 # Backup Camera
 
-![License](https://img.shields.io/badge/license-Apache%202.0-blue) ![Python](https://img.shields.io/badge/python-3.9+-green) ![Platform](https://img.shields.io/badge/platform-windows-lightgrey)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue) ![Python](https://img.shields.io/badge/python-3.9+-green) ![Platform](https://img.shields.io/badge/platform-windows-lightgrey) ![CI](https://github.com/Laboratorio-de-Arqueologia-Digital-UC/backup-camera/actions/workflows/ci.yml/badge.svg)
 
 > Sistema de ingesta forense de datos para contextos arqueológicos, garantizando la Cadena de Custodia Digital mediante verificación de hardware y hashing criptográfico.
 
@@ -22,6 +22,7 @@ En la fotogrametría arqueológica, la integridad de los datos es crítica. **Ba
 *   **Hashing al Vuelo (BLAKE3):** Verifica la integridad de cada byte copiado sin sacrificar velocidad.
 *   **Protocolo de Cuatro Pasos:** Flujo de trabajo seguro: SD -> Local -> Externo -> Archivo Final (Servidor/NAS).
 *   **Modo Puente (Bridge):** Permite la copia desde SD a Disco Externo utilizando el disco interno como búfer temporal inteligente/volátil, ideal para equipos con poco espacio de almacenamiento.
+*   **Notificaciones de Finalización:** Al completar cualquier operación de copia (ingesta, puente, respaldo o archivo), se muestra un diálogo con resumen detallado: sesión, archivos copiados, tamaño total, destino y hora de finalización.
 
 ## 🛠️ Instalación
 
@@ -78,9 +79,9 @@ Se activa automáticamente cuando el espacio en disco local es insuficiente. Per
 
 ### Flujo de Trabajo
 1.  **Columna 1:** Inserte la tarjeta SD. El sistema valida ID de hardware.
-2.  **Columna 2:** "INICIAR COPIA". Ingesta verificada a repositorio local.
-3.  **Columna 3:** Conecte disco externo (con archivo `.backup_drive`). "CLONAR".
-4.  **Columna 4:** Seleccione ruta final (ej. `Z:\Proyecto`). "ARCHIVAR Y VALIDAR".
+2.  **Columna 2:** "INICIAR COPIA". Ingesta verificada a repositorio local. Al finalizar, aparece un diálogo de confirmación con resumen de la sesión.
+3.  **Columna 3:** Conecte disco externo (con archivo `.backup_drive`). "CLONAR". Al finalizar, aparece un diálogo de confirmación.
+4.  **Columna 4:** Seleccione ruta final (ej. `Z:\Proyecto`). "ARCHIVAR Y VALIDAR". Al finalizar, aparece un diálogo de confirmación.
     -   El sistema verificará que los datos en `Z:\` coincidan exactamente con el `manifest.json` original de la tarjeta SD.
 
 
@@ -93,7 +94,10 @@ Se activa automáticamente cuando el espacio en disco local es insuficiente. Per
 │   ├── lib_hardware.py  # Lógica WMI y detección de discos
 │   ├── lib_copy.py      # Motor de copia segura con BLAKE3
 │   ├── lib_storage.py   # Gestión de rutas y espacio
+│   ├── lib_bridge.py    # Modo puente SD -> Interno -> Externo
+│   ├── lib_archive.py   # Módulo de archivo final con auditoría
 │   └── main.py          # Interfaz gráfica (CustomTkinter)
+├── tests/               # Suite de pruebas unitarias (pytest)
 ├── knowledge/           # Base de conocimientos y documentación técnica
 ├── .github/             # Configuraciones CI/CD y Templates
 ├── build.py             # Script de construcción PyInstaller
