@@ -1,3 +1,13 @@
+## v3.1.3 (2026-04-21)
+
+### Feat
+
+- **ui**: show completion dialog after ingest and bridge copy
+
+### Fix
+
+- **ci**: apply ruff formatting and add pyright venv resolution
+
 ## v3.1.2 (2026-02-27)
 
 ### Fix
