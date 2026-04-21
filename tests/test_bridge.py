@@ -88,8 +88,8 @@ def test_bridge_worker_insufficient_space(mock_env):
         # splitdrive("..ext..")[0] y splitdrive("..int..")[0] son el mismo.
         # Usando un side_effect secuencial resolvemos este problema:
         mock_du.side_effect = [
-            (1000, 1000, 0),             # 1er llamado (External -> 0 Libre)
-            (10*1024**3, 0, 10*1024**3)  # 2do llamado (Internal -> 10GB Libre)
+            (1000, 1000, 0),  # 1er llamado (External -> 0 Libre)
+            (10 * 1024**3, 0, 10 * 1024**3),  # 2do llamado (Internal -> 10GB Libre)
         ]
 
         worker = BridgeWorker(src, internal, external, app)

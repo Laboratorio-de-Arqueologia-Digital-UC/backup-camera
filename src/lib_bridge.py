@@ -53,7 +53,7 @@ class BridgeWorker(threading.Thread):
                 ext_root = os.path.splitdrive(self.external_path)[0]
                 ext_root = ext_root + "\\" if ext_root else self.external_path
                 total_ext, used_ext, free_ext = shutil.disk_usage(ext_root)
-                
+
                 if free_ext < total_source_bytes:
                     self.app.ingest_failed(
                         f"Espacio insuficiente en Externo. Req: {total_source_bytes / 1024**3:.2f}GB"
@@ -142,7 +142,9 @@ class BridgeWorker(threading.Thread):
                 os.makedirs(self.external_path, exist_ok=True)
             except Exception as e:
                 logging.error(f"Error al crear la ruta externa: {e}")
-                self.app.ingest_failed("Error accediendo o creando ruta en disco externo.")
+                self.app.ingest_failed(
+                    "Error accediendo o creando ruta en disco externo."
+                )
                 return
 
             # Create a dedicated temp folder in internal repo to avoid clashes
