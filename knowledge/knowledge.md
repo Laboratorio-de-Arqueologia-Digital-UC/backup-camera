@@ -1,5 +1,12 @@
 # Knowledge Base: Backup Camera
 
+> **Mapa de documentación.** Este archivo recoge decisiones técnicas y errores
+> resueltos, y está dirigido a quien desarrolla o mantiene el sistema.
+> Para **operarlo** (preparar discos, respaldar, verificar) el material es
+> `docs/GUIA_PRIMEROS_PASOS.md` y `docs/CHECKLIST_TERRENO.md`.
+> Al cambiar un comportamiento que el operador percibe, actualice también esa
+> guía: es la única que se lee con una tarjeta SD en la mano.
+
 ## 1. Development Workflow
 
 ### Commit Strategy (Commitizen)
@@ -106,6 +113,9 @@ siguen procesando con normalidad.
   de `manual_adopted` no se sobrescribe jamás, ni con `force=True`. Degradar
   `full` a `partial` sería una pérdida irreversible de información.
 - **No destructividad**: la adopción solo agrega dos archivos de control.
+- **Aislamiento por sesión**: un archivo ilegible reporta esa sesión como
+  `error` y el recorrido continúa. Perder 39 piezas por culpa de la número 12
+  sería inaceptable en un contexto donde cada corrida dura horas.
 
 #### Colisión de basenames en `hashes_blake3.json`
 
@@ -114,9 +124,11 @@ compatibilidad con `fotogrametria-pipeline` (contrato verificado en
 `tests/test_hashes.py`). En una estructura por pieza es frecuente que varias
 subcarpetas contengan el mismo nombre de archivo (`IMG_0001.CR2`), en cuyo caso
 **solo sobrevive el último hash**. No se cambió el formato para no romper la
-etapa siguiente; en su lugar `lib_adopt` detecta los nombres repetidos y emite
-un `logging.warning`. El `manifest.json` conserva la ruta relativa completa y
-es la fuente de verdad para la auditoría.
+etapa siguiente; en su lugar `lib_adopt` detecta los nombres repetidos, los
+incluye en el reporte (`duplicate_basenames`) y los expone en la GUI y el CLI.
+El `manifest.json` conserva la ruta relativa completa y es la fuente de verdad
+para la auditoría. Adoptar **por pieza** evita el problema, porque cada pieza
+pasa a ser una sesión independiente con su propio mapa de hashes.
 
 #### Otra distinción importante
 
@@ -173,6 +185,7 @@ válido y legible.
    (`x = (\n    "texto"\n)`): se eliminan.
 3. Llamadas anidadas cuyo argumento interno cabe en la línea del padre: se
    reindentan.
+4. Desestructuración de tupla con paréntesis en el lado derecho.
 **Solución**: usar la **coma final mágica** en toda construcción multilínea que
 se quiera mantener explotada, y extraer expresiones anidadas a variables
 intermedias en lugar de anidar llamadas partidas.
@@ -191,12 +204,34 @@ intermedias en lugar de anidar llamadas partidas.
 **Details**: Updating UI elements (Labels, Progress Bars) **must** happen on the Main Thread.
 **Solution**: Use `self.after(0, lambda: ...)` pattern to marshal updates from Worker Threads (`MonitorThread`, `IngestWorker`) back to the GUI loop. Direct calls from threads causes crashes or "Not Responding" states.
 
+### [Insight] La detección de discos externos elige la letra menor
+**Details**: `MonitorThread.check_external_targets` recorre `A:` a `Z:` buscando
+el marcador y `_update_backup_ui` toma `drives[0]`. Con dos discos marcados
+conectados a la vez, gana el de letra alfabéticamente menor, que puede no ser
+el deseado.
+**Mitigación**: la selección manual (`Elegir destino...`) tiene prioridad sobre
+la detección automática. Documentado en la guía operativa.
+
+### [Insight] El respaldo a externo omite, no completa
+**Details**: `BackupWorker` salta las carpetas que ya existen en el destino
+(`if not os.path.exists(d)`), por política de no sobrescribir a ciegas.
+**Consecuencia práctica**: una carpeta copiada a medias por una desconexión no
+se repara sola. Hay que eliminarla o renombrarla antes de reintentar.
+**Pendiente**: un modo diferencial real (comparar tamaño/hash por archivo)
+resolvería esto; ver sección 4.
+
 ## 4. Pending Improvements
-- **Differential Backup**: Currently, the backup to external drive is a simple "Copy Tree". Implementing `rsync`-like behavior (checking size/time/hash) would improve speed for incremental backups.
+- **Differential Backup**: Currently, the backup to external drive is a simple "Copy Tree". Implementing `rsync`-like behavior (checking size/time/hash) would improve speed for incremental backups and permitiría **completar** carpetas parcialmente copiadas.
 - **PDF Report Generation**: Only JSON manifests are generated. A human-readable PDF report is a planned future feature.
 - **Adopción recursiva**: `scan_manual_folder` solo considera el primer nivel de
   subcarpetas. Estructuras más profundas (por ejemplo, sitio/unidad/pieza)
   requieren adoptar cada nivel intermedio por separado.
+- **Cancelación de ingesta y puente**: solo la adopción y el archivo final
+  admiten `stop_event`. `IngestWorker` y `BridgeWorker` no se pueden detener sin
+  dejar copias incompletas.
+- **Caché de `stage_ready`**: `refresh_stage_state` hace `os.listdir` del
+  repositorio local en cada ciclo del monitor (2 s). Sobre una ruta de red lenta
+  esto introduciría latencia perceptible en la UI.
 
 ## 5. Quality Assurance & Testing
 
@@ -205,6 +240,10 @@ intermedias en lugar de anidar llamadas partidas.
 - **Configuration**:
     - `ruff`: Configured in `pyproject.toml` (or default).
     - `pyright`: Configured in `pyrightconfig.json` to handle missing stubs (e.g., `customtkinter`) by setting `reportMissingTypeStubs: false`. Note `include` only covers `src` and `build.py`, so `scripts/` and `tests/` are linted but not type-checked.
+- **Insight**: los diccionarios de retorno con valores heterogéneos deben
+  anotarse como `Dict[str, Any]`. Sin la anotación, pyright infiere
+  `bool | list[str]` y expresiones como `len(inspect_root(x)["without_manifest"])`
+  fallan con `reportArgumentType`, que es error en el modo por defecto.
 
 ### Testing Strategy
 - **Unit Tests**: Located in `tests/`. Run with `uv run pytest`.
@@ -214,6 +253,55 @@ intermedias en lugar de anidar llamadas partidas.
 - **Pattern**: los workers reciben un doble de la app (`MockApp`) que implementa
   los callbacks (`log_message`, `archive_complete`, ...) y se ejecutan con
   `worker.run()` de forma sincrónica, sin hilos.
+- **Principio**: cada prueba de `test_adopt.py` reproduce un escenario real del
+  laboratorio (dos SSD con la misma pieza, un archivo bloqueado, archivos
+  sueltos en la raíz), no un caso abstracto. Así la suite documenta el
+  comportamiento esperado en terreno.
+
+### [Fixed Bug] Copia destructiva cuando origen y destino coinciden
+- **Symptom**: archivar una carpeta sobre sí misma dejaba los archivos
+  originales en **cero bytes**, de forma irrecuperable.
+- **Cause**: `secure_copy` abre el destino con `open(dst, "wb")`, que **trunca**
+  el archivo antes de leer el origen. Si ambas rutas son la misma, se trunca y
+  luego se lee un archivo vacío. No había ninguna validación previa.
+- **Alcanzabilidad**: el defecto era latente desde v3.1, pero requería una
+  coincidencia improbable de rutas. Al introducir "Elegir origen..." en la
+  etapa 4 pasó a estar a un par de clics de cualquier operador.
+- **Fix**: `ArchiveWorker` valida con `same_path()` tanto a nivel de raíz
+  (aborta con `archive_failed`) como por sesión (omite y reporta), y `main.py`
+  lo valida antes de lanzar el worker. Cubierto por dos pruebas que verifican
+  que el contenido original sigue intacto.
+- **Lección**: al ampliar la libertad del usuario sobre las rutas, hay que
+  auditar de nuevo todas las operaciones destructivas. Una función segura bajo
+  el supuesto "origen y destino siempre difieren" deja de serlo cuando ese
+  supuesto se vuelve elegible.
+
+### [Fixed Bug] `"E:"` es una ruta relativa en Windows
+- **Symptom**: rutas construidas como `"E:Backup_Ingesta"` que resolvían a
+  carpetas inesperadas; en el peor caso, `os.listdir("E:")` listaba el
+  directorio actual de esa unidad y se archivaban datos ajenos en silencio.
+- **Cause**: en Windows `"E:"` (sin barra) es **relativa al directorio actual de
+  esa unidad**, que cada proceso mantiene por separado y que los diálogos de
+  archivos pueden modificar. `MonitorThread` entrega los discos como `"%s:"`.
+- **Fix**: `lib_storage.normalize_root()` convierte `"E:"` en `"E:\\"`. Se
+  aplica en `ArchiveWorker`, `BackupWorker`, el modo puente, la detección de
+  destinos y las funciones de `lib_adopt`.
+- **Lección**: nunca pasar una letra de unidad a `os.path.join` sin normalizar.
+
+### [Fixed Bug] Colisión de nombres de sesión contada como éxito
+- **Symptom**: al archivar un segundo SSD que traía una carpeta con el mismo
+  nombre (`Pieza_001`), la sesión se omitía, se sumaba a `processed_count` y el
+  diálogo informaba "Sesiones procesadas: N". El operador creía que el dato
+  estaba en el NAS.
+- **Cause**: el chequeo de idempotencia (`carpeta destino existe` +
+  `audit_log.txt` presente) era correcto mientras los nombres fueran
+  `YYYY-MM-DD_SD-<serial>_HHMM`, únicos por construcción. Los nombres adoptados
+  no lo son.
+- **Fix**: `_resolve_destination()` compara la **huella** del manifiesto (pares
+  `(ruta, hash)` ordenados). Si coincide, es la misma sesión y se omite; si
+  difiere, se archiva con sufijo `__YYYYMMDD-HHMMSS` y se reporta `CONFLICTO`.
+- **Lección**: al relajar una convención de nombres, revisar todo el código que
+  dependía de su unicidad como identificador.
 
 ### [Fixed Bug] UI Class Scope & Inheritance
 - **Symptom**: `AttributeError: '_tkinter.tkapp' object has no attribute 'on_source_select'` at startup.
