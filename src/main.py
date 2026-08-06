@@ -18,6 +18,7 @@ from lib_storage import (
     check_destination_space,
     generate_folder_name,
     check_duplicate_ingest,
+    normalize_root,
     save_hashes_blake3,
 )
 
@@ -30,7 +31,7 @@ from lib_adopt import (
     ORIGIN_SD,
     SCHEMA_VERSION,
     AdoptWorker,
-    inspect_root,
+    pending_adoption,
     summarize,
 )
 
@@ -181,7 +182,7 @@ class BackupWorker(threading.Thread):
     def run(self):
         try:
             # Simple sync: Copy folders from Repo to Drive/Backup_Ingesta
-            dst_repo = os.path.join(self.dst_drive, "Backup_Ingesta")
+            dst_repo = os.path.join(normalize_root(self.dst_drive), "Backup_Ingesta")
             os.makedirs(dst_repo, exist_ok=True)
 
             count = 0
@@ -232,6 +233,8 @@ class BackupCameraApp(ctk.CTk):
         self.archive_source = None
         self.adopt_root_path = None
         self.adopt_mode = None
+        self.adopt_worker = None
+        self.archive_worker = None
         self.busy = False
 
         # Disponibilidad de datos por etapa. Antes cada boton dependia del
@@ -361,6 +364,17 @@ class BackupCameraApp(ctk.CTk):
             self.frame_transit, text="Esperando...", font=("Arial", 12)
         )
         self.lbl_status.pack(pady=5)
+
+        self.btn_cancel = ctk.CTkButton(
+            self.frame_transit,
+            text="Cancelar",
+            command=self.cancel_current_task,
+            width=100,
+            height=24,
+            fg_color="#663333",
+            state="disabled",
+        )
+        self.btn_cancel.pack(pady=(0, 8))
 
         # --- PANEL 3: DESTINATION (Green) ---
         self.frame_dest = ctk.CTkFrame(self, fg_color="#1a3b25")  # Dark Green-ish
@@ -570,8 +584,10 @@ class BackupCameraApp(ctk.CTk):
             ):
                 btn.configure(state="disabled")
             self.option_source.configure(state="disabled")
+            self.btn_cancel.configure(state="normal")
             return
 
+        self.btn_cancel.configure(state="disabled")
         self.option_source.configure(state="normal")
         self.btn_adopt.configure(state="normal")
 
@@ -587,6 +603,21 @@ class BackupCameraApp(ctk.CTk):
 
         self.btn_archive.configure(
             state="normal" if self.stage_ready["archive"] else "disabled"
+        )
+
+    def cancel_current_task(self):
+        """Solicita la detención del worker en curso, si soporta cancelación."""
+        for worker in (self.adopt_worker, self.archive_worker):
+            if worker is not None and worker.is_alive():
+                worker.stop()
+                self.log_message("Cancelación solicitada; terminando de forma segura.")
+                self.btn_cancel.configure(state="disabled")
+                return
+
+        messagebox.showinfo(
+            "Cancelar",
+            "La operación en curso no admite cancelación segura. Espere a que "
+            "finalice para no dejar copias incompletas.",
         )
 
     def change_local_repo(self):
@@ -757,7 +788,10 @@ class BackupCameraApp(ctk.CTk):
         self.after(0, lambda: self._update_backup_ui(drives))
 
     def _update_backup_ui(self, drives):
-        detected = drives[0] if drives else None
+        # MonitorThread entrega "E:" (sin barra), que en Windows es relativa al
+        # directorio actual de esa unidad. Normalizar evita que os.path.join
+        # construya rutas como "E:Backup_Ingesta".
+        detected = normalize_root(drives[0]) if drives else None
 
         # Una elección manual tiene prioridad sobre la detección automática,
         # para permitir respaldar a un destino sin marcador .backup_drive.
@@ -802,6 +836,7 @@ class BackupCameraApp(ctk.CTk):
         if not folder:
             return
 
+        folder = normalize_root(folder)
         marker = os.path.join(folder, ".backup_drive")
         if not os.path.exists(marker):
             answer = messagebox.askyesnocancel(
@@ -844,6 +879,17 @@ class BackupCameraApp(ctk.CTk):
             )
             return
 
+        destino = os.path.join(normalize_root(self.backup_target), "Backup_Ingesta")
+        if os.path.normcase(os.path.abspath(destino)) == os.path.normcase(
+            os.path.abspath(self.local_repo)
+        ):
+            messagebox.showerror(
+                "Error",
+                "El repositorio local y el destino de respaldo son la misma "
+                "carpeta. La operación se canceló para no dañar los datos.",
+            )
+            return
+
         self.busy = True
         self.refresh_stage_buttons()
         self.lbl_dest_info.configure(text="Sincronizando...")
@@ -864,8 +910,11 @@ class BackupCameraApp(ctk.CTk):
         # 1. Generate naming based on hardware and time
         session_folder = generate_folder_name(hw_id, self.local_repo)
 
-        # 2. Build final external path (nested)
-        target_ext = os.path.join(self.backup_target, "Backup_Ingesta", session_folder)
+        # 2. Build final external path (nested). normalize_root es imprescindible:
+        # con "E:" el join produciria una ruta relativa a esa unidad.
+        target_ext = os.path.join(
+            normalize_root(self.backup_target), "Backup_Ingesta", session_folder
+        )
 
         # Confirm Action
         if not messagebox.askyesno(
@@ -1105,7 +1154,7 @@ class BackupCameraApp(ctk.CTk):
         self.lbl_status.configure(text="Adoptando carpeta existente...")
         self.log_message(f"Adopción iniciada: {folder} ({descripcion})")
 
-        worker = AdoptWorker(
+        self.adopt_worker = AdoptWorker(
             folder,
             self,
             mode=mode,
@@ -1113,7 +1162,7 @@ class BackupCameraApp(ctk.CTk):
             notes=f"Copia manual adoptada desde {folder}",
             entry_stage=entry_stage,
         )
-        worker.start()
+        self.adopt_worker.start()
 
     def update_adopt_status(self, msg):
         self.after(0, lambda: self.lbl_status.configure(text=msg))
@@ -1151,8 +1200,8 @@ class BackupCameraApp(ctk.CTk):
                 f"Sesiones: {summary['sessions']}\n"
                 f"Archivos: {summary['files']}\n\n"
                 f"{detalle}\n\n"
-                "Revise el registro: hay desvíos de integridad o manifiestos "
-                "protegidos que no se re-generaron.",
+                "Revise el registro inferior: hay sesiones con error, desvíos "
+                "de integridad, archivos sueltos o manifiestos protegidos.",
             )
         else:
             messagebox.showinfo(
@@ -1222,12 +1271,12 @@ class BackupCameraApp(ctk.CTk):
         if not folder:
             return
 
-        self.archive_source = folder
+        self.archive_source = normalize_root(folder)
         self.refresh_stage_state()
         self._refresh_archive_source_label()
-        self.log_message(f"Origen de archivo: {folder}")
+        self.log_message(f"Origen de archivo: {self.archive_source}")
 
-        pendientes = self._pending_adoption(folder)
+        pendientes = self._pending_adoption(self.archive_source)
         if pendientes:
             if messagebox.askyesno(
                 "Carpetas sin línea base",
@@ -1236,19 +1285,18 @@ class BackupCameraApp(ctk.CTk):
                 "¿Desea adoptarlas ahora? Se calcularán sus hashes sin mover "
                 "los archivos.",
             ):
-                self.run_adoption(folder, MODE_PER_SUBFOLDER, entry_stage="archive")
+                self.run_adoption(
+                    self.archive_source, MODE_PER_SUBFOLDER, entry_stage="archive"
+                )
 
     def _pending_adoption(self, folder):
-        """Subcarpetas sin manifiesto que quedarían fuera del archivo final."""
-        target = folder
-        nested = os.path.join(folder, "Backup_Ingesta")
-        if os.path.isdir(nested):
-            target = nested
+        """
+        Subcarpetas sin manifiesto que quedarían fuera del archivo final.
 
-        state = inspect_root(target)
-        if state["self"]:
-            return []
-        return state["without_manifest"]
+        Delega en lib_adopt para no duplicar (ni desincronizar) la resolución
+        de "Backup_Ingesta" ni la normalización de raíces de unidad.
+        """
+        return pending_adoption(folder)
 
     def _refresh_archive_source_label(self):
         source = self.effective_archive_source()
@@ -1275,6 +1323,21 @@ class BackupCameraApp(ctk.CTk):
         dest_root = self.entry_archive_dest.get()
         if not dest_root:
             messagebox.showerror("Error", "Indique la ruta de destino final.")
+            return
+
+        src_root = normalize_root(src_root)
+        dest_root = normalize_root(dest_root)
+
+        # secure_copy trunca el destino antes de leer el origen: si coinciden,
+        # los archivos originales se destruyen.
+        if os.path.normcase(os.path.abspath(src_root)) == os.path.normcase(
+            os.path.abspath(dest_root)
+        ):
+            messagebox.showerror(
+                "Error",
+                "El origen y el destino final son la misma carpeta. La "
+                "operación se canceló para no destruir los archivos.",
+            )
             return
 
         if not os.path.exists(dest_root):
