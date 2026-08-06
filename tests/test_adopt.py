@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import threading
 
 import pytest
 
@@ -12,18 +13,24 @@ from lib_adopt import (  # noqa: E402
     ORIGIN_MANUAL,
     ORIGIN_SD,
     STATUS_ADOPTED,
+    STATUS_CANCELLED,
     STATUS_DRIFT,
     STATUS_EMPTY,
+    STATUS_ERROR,
+    STATUS_LOOSE,
     STATUS_PROTECTED,
     STATUS_VERIFIED,
     AdoptionError,
     adopt_root,
     adopt_session,
+    collect_duplicate_warnings,
     inspect_root,
+    pending_adoption,
     scan_manual_folder,
     verify_session,
 )
 from lib_archive import ArchiveWorker  # noqa: E402
+from lib_storage import normalize_root  # noqa: E402
 
 
 class MockApp:
@@ -67,6 +74,9 @@ def ssd_por_pieza(tmp_path):
             (carpeta / nombre).write_bytes(datos)
 
     return root
+
+
+# --- Adopcion basica -------------------------------------------------------
 
 
 def test_adopcion_por_pieza_genera_manifiesto_y_hashes(ssd_por_pieza):
@@ -190,6 +200,97 @@ def test_inspect_root_distingue_carpetas_adoptables(ssd_por_pieza):
     assert [os.path.basename(p) for p in estado["without_manifest"]] == ["Pieza_002"]
 
 
+def test_pending_adoption_resuelve_backup_ingesta(tmp_path):
+    externo = tmp_path / "Externo"
+    sesion = externo / "Backup_Ingesta" / "Sesion_A"
+    sesion.mkdir(parents=True)
+    (sesion / "IMG.CR2").write_bytes(b"Z")
+
+    pendientes = pending_adoption(str(externo))
+
+    assert [os.path.basename(p) for p in pendientes] == ["Sesion_A"]
+
+    adopt_session(str(sesion), operator="Victor")
+    assert pending_adoption(str(externo)) == []
+
+
+# --- Robustez de la adopcion ----------------------------------------------
+
+
+def test_error_en_una_pieza_no_pierde_las_demas(ssd_por_pieza, monkeypatch):
+    """Un archivo bloqueado no debe invalidar el trabajo de las otras piezas."""
+    import lib_adopt
+
+    real_hash_file = lib_adopt.hash_file
+
+    def hash_con_falla(path, callback_progress=None):
+        if path.endswith("IMG_0001.CR2"):
+            raise OSError("El proceso no tiene acceso al archivo")
+        return real_hash_file(path, callback_progress)
+
+    monkeypatch.setattr(lib_adopt, "hash_file", hash_con_falla)
+
+    reportes = adopt_root(str(ssd_por_pieza), operator="Victor")
+    estados = {r["name"]: r["status"] for r in reportes}
+
+    assert estados["Pieza_001"] == STATUS_ERROR
+    assert estados["Pieza_002"] == STATUS_ADOPTED
+    assert (ssd_por_pieza / "Pieza_002" / "manifest.json").exists()
+    assert not (ssd_por_pieza / "Pieza_001" / "manifest.json").exists()
+
+
+def test_archivos_sueltos_en_la_raiz_se_reportan(ssd_por_pieza):
+    (ssd_por_pieza / "notas_terreno.txt").write_bytes(b"apuntes")
+
+    reportes = adopt_root(str(ssd_por_pieza), operator="Victor")
+    sueltos = [r for r in reportes if r["status"] == STATUS_LOOSE]
+
+    assert len(sueltos) == 1
+    assert sueltos[0]["loose"] == ["notas_terreno.txt"]
+
+
+def test_cancelacion_detiene_la_adopcion(ssd_por_pieza):
+    stop_event = threading.Event()
+    stop_event.set()
+
+    reportes = adopt_root(str(ssd_por_pieza), stop_event=stop_event)
+
+    assert [r["status"] for r in reportes] == [STATUS_CANCELLED]
+    assert not (ssd_por_pieza / "Pieza_001" / "manifest.json").exists()
+
+
+def test_colision_de_basenames_se_reporta(tmp_path):
+    """hashes_blake3.json aplana a basename: hay que avisar de la perdida."""
+    sesion = tmp_path / "Sesion"
+    (sesion / "a").mkdir(parents=True)
+    (sesion / "b").mkdir(parents=True)
+    (sesion / "a" / "IMG_0001.CR2").write_bytes(b"UNO")
+    (sesion / "b" / "IMG_0001.CR2").write_bytes(b"DOS")
+
+    reporte = adopt_session(str(sesion), operator="Victor")
+
+    assert reporte["status"] == STATUS_ADOPTED
+    assert reporte["files"] == 2
+    assert "IMG_0001.CR2" in reporte["duplicate_basenames"]
+
+    # El manifiesto conserva ambas rutas; el mapa plano solo una clave.
+    hashes = json.loads(
+        (sesion / "hashes_blake3.json").read_text(encoding="utf-8")
+    )
+    assert len(hashes) == 1
+    assert collect_duplicate_warnings([reporte])
+
+
+def test_normalize_root_convierte_unidad_en_ruta_absoluta():
+    assert normalize_root("E:") == "E:" + os.sep
+    assert normalize_root("E:" + os.sep) == "E:" + os.sep
+    assert normalize_root("") == ""
+    assert normalize_root(None) is None
+
+
+# --- Archivo final --------------------------------------------------------
+
+
 def test_archivo_final_acepta_sesiones_adoptadas_en_la_raiz(ssd_por_pieza, tmp_path):
     adopt_root(str(ssd_por_pieza), operator="Victor Mendez")
     destino = tmp_path / "NAS"
@@ -231,3 +332,86 @@ def test_archivo_final_acepta_una_sesion_directa(ssd_por_pieza, tmp_path):
 
     assert app.completed_count == 1
     assert (destino / "Pieza_002" / "IMG_0003.CR2").exists()
+
+
+def test_archivo_final_rechaza_origen_igual_a_destino(ssd_por_pieza):
+    """secure_copy trunca el destino: copiar sobre si mismo destruye el dato."""
+    adopt_root(str(ssd_por_pieza), operator="Victor")
+
+    app = MockApp()
+    ArchiveWorker(str(ssd_por_pieza), str(ssd_por_pieza), app).run()
+
+    assert app.failed_err is not None
+    assert "misma carpeta" in app.failed_err
+    assert app.completed_count == 0
+    # Lo esencial: el archivo original sigue intacto, no truncado a 0 bytes.
+    assert (ssd_por_pieza / "Pieza_001" / "IMG_0001.CR2").read_bytes() == b"AAA"
+
+
+def test_archivo_final_rechaza_sesion_con_origen_igual_a_destino(tmp_path):
+    """Caso real: origen 'E:\\' y destino final 'E:\\Backup_Ingesta'."""
+    externo = tmp_path / "Externo"
+    contenedor = externo / "Backup_Ingesta"
+    sesion = contenedor / "Sesion_A"
+    sesion.mkdir(parents=True)
+    (sesion / "IMG.CR2").write_bytes(b"DATOS_IMPORTANTES")
+    adopt_session(str(sesion), operator="Victor")
+
+    app = MockApp()
+    ArchiveWorker(str(externo), str(contenedor), app).run()
+
+    assert app.completed_count == 0
+    assert any("mismo origen" in msg for msg in app.log)
+    assert (sesion / "IMG.CR2").read_bytes() == b"DATOS_IMPORTANTES"
+
+
+def test_archivo_final_no_sobrescribe_sesiones_homonimas(tmp_path):
+    """Dos SSD distintos pueden traer una 'Pieza_001' con contenido distinto."""
+    destino = tmp_path / "NAS"
+
+    primero = tmp_path / "SSD_A"
+    (primero / "Pieza_001").mkdir(parents=True)
+    (primero / "Pieza_001" / "IMG.CR2").write_bytes(b"PRIMERO")
+    adopt_root(str(primero), operator="Victor")
+
+    segundo = tmp_path / "SSD_B"
+    (segundo / "Pieza_001").mkdir(parents=True)
+    (segundo / "Pieza_001" / "IMG.CR2").write_bytes(b"SEGUNDO")
+    adopt_root(str(segundo), operator="Victor")
+
+    app_a = MockApp()
+    ArchiveWorker(str(primero), str(destino), app_a).run()
+    assert app_a.completed_count == 1
+
+    app_b = MockApp()
+    ArchiveWorker(str(segundo), str(destino), app_b).run()
+
+    assert app_b.completed_count == 1
+    assert any("CONFLICTO" in msg for msg in app_b.log)
+
+    # El primero no fue sobrescrito y el segundo si llego al NAS.
+    assert (destino / "Pieza_001" / "IMG.CR2").read_bytes() == b"PRIMERO"
+
+    duplicadas = [
+        nombre
+        for nombre in os.listdir(destino)
+        if nombre.startswith("Pieza_001__")
+    ]
+    assert len(duplicadas) == 1
+    copiado = destino / duplicadas[0] / "IMG.CR2"
+    assert copiado.read_bytes() == b"SEGUNDO"
+
+
+def test_archivo_final_es_idempotente_para_la_misma_sesion(ssd_por_pieza, tmp_path):
+    adopt_root(str(ssd_por_pieza), operator="Victor")
+    destino = tmp_path / "NAS"
+
+    primera = MockApp()
+    ArchiveWorker(str(ssd_por_pieza), str(destino), primera).run()
+
+    segunda = MockApp()
+    ArchiveWorker(str(ssd_por_pieza), str(destino), segunda).run()
+
+    assert segunda.completed_count == 2
+    assert not any("CONFLICTO" in msg for msg in segunda.log)
+    assert len([n for n in os.listdir(destino) if n.startswith("Pieza_001")]) == 1
