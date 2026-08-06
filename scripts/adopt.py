@@ -12,9 +12,13 @@ Uso tipico (copia manual en SSD, una carpeta por pieza):
 Verificacion posterior (no escribe nada, exit code 1 si hay desvios):
 
     uv run python scripts/adopt.py --root "D:\\Piezas" --verify
+
+Codigos de salida: 0 sin observaciones, 1 con desvios o sesiones con error,
+2 si la operacion no pudo iniciarse.
 """
 
 import argparse
+import logging
 import os
 import sys
 
@@ -27,6 +31,7 @@ from lib_adopt import (  # noqa: E402
     MODE_SINGLE,
     AdoptionError,
     adopt_root,
+    collect_duplicate_warnings,
     summarize,
 )
 
@@ -85,6 +90,11 @@ def parse_args(argv=None):
         action="store_true",
         help="Re-genera la linea base de sesiones ya adoptadas.",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Silencia los avisos de logging (solo muestra el reporte).",
+    )
     return parser.parse_args(argv)
 
 
@@ -98,9 +108,13 @@ def print_report(report):
         ("modificado", "modified"),
         ("faltante", "missing"),
         ("nuevo", "added"),
+        ("suelto en raiz", "loose"),
     ):
         for item in report.get(key) or []:
             print(f"        - {label}: {item}")
+
+    for name, paths in (report.get("duplicate_basenames") or {}).items():
+        print(f"        - nombre repetido '{name}': {len(paths)} ocurrencias")
 
     if report.get("message"):
         print(f"        {report['message']}")
@@ -108,6 +122,11 @@ def print_report(report):
 
 def main(argv=None):
     args = parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.ERROR if args.quiet else logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
 
     try:
         reports = adopt_root(
@@ -121,6 +140,9 @@ def main(argv=None):
         )
     except AdoptionError as exc:
         print(f"ERROR: {exc}")
+        return 2
+    except OSError as exc:
+        print(f"ERROR de E/S: {exc}")
         return 2
 
     modo = args.mode + (" (solo verificacion)" if args.verify else "")
@@ -138,8 +160,14 @@ def main(argv=None):
     for status, count in sorted(summary["by_status"].items()):
         print(f"  {status}: {count}")
 
+    warnings = collect_duplicate_warnings(reports)
+    if warnings:
+        print("\nColisiones de nombre:")
+        for message in warnings:
+            print(f"  - {message}")
+
     if summary["has_problems"]:
-        print("\nATENCION: hay desvios de integridad o manifiestos protegidos.")
+        print("\nATENCION: revise las sesiones marcadas arriba antes de archivar.")
         return 1
 
     print("\nListo. Las sesiones ya pueden entrar a las etapas 3 y 4 del flujo.")

@@ -21,12 +21,13 @@ import threading
 from typing import Any, Dict
 
 from lib_copy import hash_file
-from lib_storage import save_hashes_blake3
+from lib_storage import normalize_root, save_hashes_blake3
 
 MANIFEST_NAME = "manifest.json"
 HASHES_NAME = "hashes_blake3.json"
 AUDIT_NAME = "audit_log.txt"
 MARKER_NAME = ".backup_drive"
+SESSIONS_FOLDER = "Backup_Ingesta"
 
 SCHEMA_VERSION = 2
 
@@ -46,8 +47,18 @@ STATUS_DRIFT = "drift"
 STATUS_EMPTY = "empty"
 STATUS_PROTECTED = "protected"
 STATUS_NO_MANIFEST = "no_manifest"
+STATUS_ERROR = "error"
+STATUS_LOOSE = "loose_files"
+STATUS_CANCELLED = "cancelled"
 
-PROBLEM_STATUSES = (STATUS_DRIFT, STATUS_PROTECTED, STATUS_NO_MANIFEST)
+# Estados que exigen atencion del operador (exit code != 0 en el CLI).
+PROBLEM_STATUSES = (
+    STATUS_DRIFT,
+    STATUS_PROTECTED,
+    STATUS_NO_MANIFEST,
+    STATUS_ERROR,
+    STATUS_LOOSE,
+)
 
 # Archivos de control del propio sistema: nunca entran al manifiesto.
 EXCLUDED_FILES = {
@@ -65,6 +76,10 @@ class AdoptionError(Exception):
     """Error de adopcion explicable al usuario."""
 
 
+class AdoptionCancelled(Exception):
+    """La operacion fue interrumpida a peticion del usuario."""
+
+
 def scan_manual_folder(root, mode=MODE_PER_SUBFOLDER):
     """
     Detecta las sesiones candidatas dentro de una copia manual.
@@ -73,7 +88,7 @@ def scan_manual_folder(root, mode=MODE_PER_SUBFOLDER):
                           (caso "carpeta ordenada por pieza").
     mode="single":        la carpeta raiz completa es una sola sesion.
     """
-    root = os.path.abspath(root)
+    root = os.path.abspath(normalize_root(root))
     if not os.path.isdir(root):
         raise AdoptionError(f"La ruta no existe o no es una carpeta: {root}")
 
@@ -108,6 +123,27 @@ def list_session_files(session_path):
     return sorted(collected)
 
 
+def loose_files_at_root(root):
+    """
+    Archivos de datos sueltos en la raiz, que ninguna sesion cubriria.
+
+    En modo por-pieza solo se adoptan subcarpetas, asi que un archivo dejado
+    en la raiz quedaria permanentemente fuera del flujo sin ningun aviso.
+    """
+    root = os.path.abspath(normalize_root(root))
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return []
+
+    return sorted(
+        name
+        for name in names
+        if os.path.isfile(os.path.join(root, name))
+        and name.lower() not in EXCLUDED_FILES
+    )
+
+
 def read_manifest(session_path):
     """Lee el manifiesto de la sesion, o None si no existe."""
     path = os.path.join(session_path, MANIFEST_NAME)
@@ -136,7 +172,7 @@ def inspect_root(root):
       - "with_manifest": subcarpetas que ya tienen manifiesto.
       - "without_manifest": subcarpetas que requieren adopcion.
     """
-    root = os.path.abspath(root)
+    root = os.path.abspath(normalize_root(root))
     result: Dict[str, Any] = {
         "self": False,
         "with_manifest": [],
@@ -165,6 +201,25 @@ def inspect_root(root):
     return result
 
 
+def pending_adoption(folder):
+    """
+    Subcarpetas que quedarian fuera del archivo final por falta de manifiesto.
+
+    Centraliza la normalizacion de raices de unidad y la resolucion de
+    "Backup_Ingesta", para que la GUI no tenga que replicar esa logica (y no
+    vuelva a construir rutas relativas del tipo "E:Backup_Ingesta").
+    """
+    target = os.path.abspath(normalize_root(folder))
+    nested = os.path.join(target, SESSIONS_FOLDER)
+    if os.path.isdir(nested):
+        target = nested
+
+    state = inspect_root(target)
+    if state["self"]:
+        return []
+    return list(state["without_manifest"])
+
+
 def _report(session_path, status, **extra):
     base: Dict[str, Any] = {
         "session": session_path,
@@ -176,13 +231,15 @@ def _report(session_path, status, **extra):
         "added": [],
         "missing": [],
         "modified": [],
+        "loose": [],
+        "duplicate_basenames": {},
         "message": "",
     }
     base.update(extra)
     return base
 
 
-def _warn_duplicate_basenames(session_path, entries):
+def _find_duplicate_basenames(session_path, entries):
     """
     hashes_blake3.json es plano (nombre -> hash) por compatibilidad con
     fotogrametria-pipeline. Si hay nombres repetidos en subcarpetas, solo
@@ -204,20 +261,29 @@ def _warn_duplicate_basenames(session_path, entries):
     return duplicated
 
 
-def _build_entries(session_path, rel_paths, progress_cb=None):
+def _build_entries(session_path, rel_paths, progress_cb=None, stop_event=None):
     entries = []
     total_bytes = 0
     total = len(rel_paths)
 
     for index, rel_path in enumerate(rel_paths):
+        if stop_event is not None and stop_event.is_set():
+            raise AdoptionCancelled(session_path)
+
         full = os.path.join(session_path, rel_path)
-        size = os.path.getsize(full)
+        try:
+            size = os.path.getsize(full)
+            digest = hash_file(full)
+            mtime = int(os.path.getmtime(full))
+        except OSError as exc:
+            raise AdoptionError(f"No se pudo leer '{rel_path}': {exc}")
+
         entries.append(
             {
                 "path": rel_path,
-                "hash": hash_file(full),
+                "hash": digest,
                 "size": size,
-                "mtime": int(os.path.getmtime(full)),
+                "mtime": mtime,
             }
         )
         total_bytes += size
@@ -227,7 +293,7 @@ def _build_entries(session_path, rel_paths, progress_cb=None):
     return entries, total_bytes
 
 
-def verify_session(session_path, progress_cb=None):
+def verify_session(session_path, progress_cb=None, stop_event=None):
     """
     Re-hashea la sesion contra su manifiesto y reporta desvios.
     No escribe nada en disco.
@@ -252,7 +318,7 @@ def verify_session(session_path, progress_cb=None):
     missing = [
         rel
         for rel in sorted(recorded)
-        if not os.path.exists(os.path.join(session_path, rel))
+        if not os.path.isfile(os.path.join(session_path, rel))
     ]
 
     checked = [rel for rel in present if rel in recorded]
@@ -260,7 +326,14 @@ def verify_session(session_path, progress_cb=None):
     total = len(checked)
 
     for index, rel_path in enumerate(checked):
-        actual = hash_file(os.path.join(session_path, rel_path))
+        if stop_event is not None and stop_event.is_set():
+            raise AdoptionCancelled(session_path)
+
+        try:
+            actual = hash_file(os.path.join(session_path, rel_path))
+        except OSError as exc:
+            raise AdoptionError(f"No se pudo leer '{rel_path}': {exc}")
+
         if actual != recorded[rel_path].get("hash"):
             modified.append(rel_path)
         if progress_cb:
@@ -288,6 +361,7 @@ def adopt_session(
     entry_stage="local_ssd",
     force=False,
     progress_cb=None,
+    stop_event=None,
 ):
     """
     Genera la linea base de integridad de una sesion ya copiada.
@@ -318,7 +392,7 @@ def adopt_session(
                 ),
             )
         if not force:
-            return verify_session(session_path, progress_cb)
+            return verify_session(session_path, progress_cb, stop_event)
 
     rel_paths = list_session_files(session_path)
     if not rel_paths:
@@ -328,8 +402,10 @@ def adopt_session(
             message="La carpeta no contiene archivos de datos.",
         )
 
-    entries, total_bytes = _build_entries(session_path, rel_paths, progress_cb)
-    _warn_duplicate_basenames(session_path, entries)
+    entries, total_bytes = _build_entries(
+        session_path, rel_paths, progress_cb, stop_event
+    )
+    duplicated = _find_duplicate_basenames(session_path, entries)
 
     now = datetime.datetime.now()
     manifest: Dict[str, Any] = {
@@ -360,6 +436,7 @@ def adopt_session(
         origin=ORIGIN_MANUAL,
         files=len(entries),
         bytes=total_bytes,
+        duplicate_basenames=duplicated,
         manifest_path=manifest_path,
     )
 
@@ -374,27 +451,74 @@ def adopt_root(
     verify_only=False,
     progress_cb=None,
     session_cb=None,
+    stop_event=None,
 ):
-    """Adopta (o verifica) todas las sesiones de una copia manual."""
+    """
+    Adopta (o verifica) todas las sesiones de una copia manual.
+
+    Cada sesion se aisla: un archivo ilegible (bloqueado, sin permisos o con
+    sectores danados) no debe invalidar el trabajo de las demas.
+    """
     reports = []
 
+    if mode == MODE_PER_SUBFOLDER:
+        loose = loose_files_at_root(root)
+        if loose:
+            reports.append(
+                _report(
+                    os.path.abspath(normalize_root(root)),
+                    STATUS_LOOSE,
+                    loose=loose,
+                    message=(
+                        f"{len(loose)} archivo(s) sueltos en la raiz no "
+                        "pertenecen a ninguna pieza y quedarian fuera del "
+                        "flujo. Muevalos a una subcarpeta o use el modo "
+                        f"'{MODE_SINGLE}'."
+                    ),
+                )
+            )
+
     for session_path in scan_manual_folder(root, mode):
+        if stop_event is not None and stop_event.is_set():
+            reports.append(
+                _report(
+                    session_path,
+                    STATUS_CANCELLED,
+                    message="Cancelado antes de procesar esta sesion.",
+                )
+            )
+            break
+
         if session_cb:
             session_cb(os.path.basename(os.path.normpath(session_path)))
 
-        if verify_only:
-            reports.append(verify_session(session_path, progress_cb))
-        else:
-            reports.append(
-                adopt_session(
+        try:
+            if verify_only:
+                report = verify_session(session_path, progress_cb, stop_event)
+            else:
+                report = adopt_session(
                     session_path,
                     operator=operator,
                     notes=notes,
                     entry_stage=entry_stage,
                     force=force,
                     progress_cb=progress_cb,
+                    stop_event=stop_event,
+                )
+        except AdoptionCancelled:
+            reports.append(
+                _report(
+                    session_path,
+                    STATUS_CANCELLED,
+                    message="Operacion cancelada por el usuario.",
                 )
             )
+            break
+        except AdoptionError as exc:
+            logging.error("Sesion con error: %s", exc)
+            report = _report(session_path, STATUS_ERROR, message=str(exc))
+
+        reports.append(report)
 
     return reports
 
@@ -418,6 +542,21 @@ def summarize(reports):
         "has_problems": has_problems,
     }
     return summary
+
+
+def collect_duplicate_warnings(reports):
+    """Mensajes legibles sobre colisiones de nombre en hashes_blake3.json."""
+    messages = []
+    for report in reports:
+        duplicated = report.get("duplicate_basenames") or {}
+        if duplicated:
+            messages.append(
+                f"{report.get('name')}: {len(duplicated)} nombre(s) de archivo "
+                "repetidos en subcarpetas; hashes_blake3.json conservara solo "
+                "el ultimo de cada nombre (el manifest.json conserva todas "
+                "las rutas)."
+            )
+    return messages
 
 
 class AdoptWorker(threading.Thread):
@@ -449,6 +588,7 @@ class AdoptWorker(threading.Thread):
         self.force = force
         self.verify_only = verify_only
         self.daemon = True
+        self.stop_event = threading.Event()
 
     def _notify(self, handler_name, *args):
         handler = getattr(self.app, handler_name, None)
@@ -473,10 +613,18 @@ class AdoptWorker(threading.Thread):
                 session_cb=lambda name: self._notify(
                     "update_adopt_status", f"Analizando: {name}"
                 ),
+                stop_event=self.stop_event,
             )
+
+            for message in collect_duplicate_warnings(reports):
+                self._notify("log_message", f"AVISO: {message}")
+
             self._notify("adopt_complete", reports)
         except AdoptionError as exc:
             self._notify("adopt_failed", str(exc))
         except Exception as exc:
             logging.error(f"Adopt failed: {exc}")
             self._notify("adopt_failed", str(exc))
+
+    def stop(self):
+        self.stop_event.set()
