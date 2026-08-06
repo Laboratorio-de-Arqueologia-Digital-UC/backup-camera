@@ -1190,8 +1190,7 @@ class BackupCameraApp(ctk.CTk):
         self.progress_bar.set(0 if summary["has_problems"] else 1)
         self.lbl_status.configure(text="Adopción finalizada")
         self.log_message(
-            f"Adopción: {summary['sessions']} sesión(es), "
-            f"{summary['files']} archivo(s)"
+            f"Adopción: {summary['sessions']} sesión(es), {summary['files']} archivo(s)"
         )
 
         if summary["has_problems"]:
