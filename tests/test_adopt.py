@@ -274,9 +274,9 @@ def test_colision_de_basenames_se_reporta(tmp_path):
     assert "IMG_0001.CR2" in reporte["duplicate_basenames"]
 
     # El manifiesto conserva ambas rutas; el mapa plano solo una clave.
-    hashes = json.loads(
-        (sesion / "hashes_blake3.json").read_text(encoding="utf-8")
-    )
+    hashes_path = sesion / "hashes_blake3.json"
+    hashes = json.loads(hashes_path.read_text(encoding="utf-8"))
+
     assert len(hashes) == 1
     assert collect_duplicate_warnings([reporte])
 
@@ -392,11 +392,9 @@ def test_archivo_final_no_sobrescribe_sesiones_homonimas(tmp_path):
     # El primero no fue sobrescrito y el segundo si llego al NAS.
     assert (destino / "Pieza_001" / "IMG.CR2").read_bytes() == b"PRIMERO"
 
-    duplicadas = [
-        nombre
-        for nombre in os.listdir(destino)
-        if nombre.startswith("Pieza_001__")
-    ]
+    nombres = os.listdir(destino)
+    duplicadas = [n for n in nombres if n.startswith("Pieza_001__")]
+
     assert len(duplicadas) == 1
     copiado = destino / duplicadas[0] / "IMG.CR2"
     assert copiado.read_bytes() == b"SEGUNDO"

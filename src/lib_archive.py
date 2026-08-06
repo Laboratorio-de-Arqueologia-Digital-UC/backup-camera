@@ -15,9 +15,9 @@ ORIGIN_MANUAL = "manual_adopted"
 
 def same_path(first, second):
     """Compara rutas de forma segura en sistemas insensibles a mayusculas."""
-    return os.path.normcase(os.path.abspath(first)) == os.path.normcase(
-        os.path.abspath(second)
-    )
+    left = os.path.normcase(os.path.abspath(first))
+    right = os.path.normcase(os.path.abspath(second))
+    return left == right
 
 
 class ArchiveWorker(threading.Thread):
@@ -105,7 +105,8 @@ class ArchiveWorker(threading.Thread):
         sesion: los nombres adoptados ("Pieza_001") no son unicos como si lo
         eran los canonicos ("2026-08-06_SD-A1B2C3_1430"). Sin esta
         comparacion, una segunda sesion distinta con el mismo nombre se
-        omitia y se contaba como archivada.
+        omitia y se contaba como archivada, haciendo creer al operador que el
+        dato estaba a salvo en el NAS.
         """
         dest = os.path.join(self.dest_root, folder_name)
         audit = os.path.join(dest, AUDIT_NAME)
@@ -225,9 +226,8 @@ class ArchiveWorker(threading.Thread):
                     )
                     continue
 
-                dest_session_path, already_archived, conflict = (
-                    self._resolve_destination(folder_name, manifest_data)
-                )
+                resolved = self._resolve_destination(folder_name, manifest_data)
+                dest_session_path, already_archived, conflict = resolved
 
                 if already_archived:
                     logging.info(f"Skipping {folder_name}: Already archived.")
