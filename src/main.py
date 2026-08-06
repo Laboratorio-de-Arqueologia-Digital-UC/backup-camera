@@ -959,9 +959,7 @@ class BackupCameraApp(ctk.CTk):
                 self.lbl_source_space.configure(text="Espacio: ?")
 
         label = info["label"] if info else "?"
-        display_text = (
-            f"Unidad: {letter}\nEtiqueta: {label}\nID Hardware: {hw_id}"
-        )
+        display_text = f"Unidad: {letter}\nEtiqueta: {label}\nID Hardware: {hw_id}"
         self.lbl_source_info.configure(text=display_text)
 
         # La etapa 1 sigue exigiendo un ID de hardware válido: es el núcleo de
