@@ -7,78 +7,154 @@ import threading
 from lib_copy import secure_copy
 from lib_storage import save_hashes_blake3
 
+SESSIONS_FOLDER = "Backup_Ingesta"
+MANIFEST_NAME = "manifest.json"
+AUDIT_NAME = "audit_log.txt"
+ORIGIN_MANUAL = "manual_adopted"
+
 
 class ArchiveWorker(threading.Thread):
-    def __init__(self, src_root, dest_root, app):
+    def __init__(self, src_root, dest_root, app, sessions_root=None):
         r"""
-        Worker to archive data from External Drive to Final Storage.
+        Worker to archive data from a source repository to Final Storage.
 
         Args:
-            src_root (str): Root of the External Drive (e.g., E:\).
-                            Expected to contain "Backup_Ingesta" folder.
+            src_root (str): Origen. Puede ser la raiz de un disco externo (con
+                            carpeta "Backup_Ingesta"), una carpeta que contenga
+                            sesiones con manifiesto (copias adoptadas), o una
+                            sesion individual.
             dest_root (str): Root of Final Storage (e.g., Z:\Archive).
             app: Reference to main GUI for updates.
+            sessions_root (str): Opcional, fuerza la carpeta contenedora de
+                            sesiones para permitir entrar al flujo en etapa 4.
         """
         super().__init__()
         self.src_root = src_root
         self.dest_root = dest_root
         self.app = app
+        self.sessions_root = sessions_root
         self.daemon = True
         self.stop_event = threading.Event()
 
+    # --- Resolucion flexible del origen ---------------------------------
+
+    @staticmethod
+    def _has_manifest(path):
+        return os.path.exists(os.path.join(path, MANIFEST_NAME))
+
+    @staticmethod
+    def _subdirs(path):
+        try:
+            return [
+                os.path.join(path, name)
+                for name in sorted(os.listdir(path))
+                if os.path.isdir(os.path.join(path, name))
+            ]
+        except OSError:
+            return []
+
+    def _collect_sessions(self):
+        """
+        Resuelve el contenedor de sesiones sin exigir una estructura unica.
+
+        Devuelve (sesiones_con_manifiesto, omitidas_sin_manifiesto).
+        """
+        container = self.sessions_root
+
+        if not container:
+            nested = os.path.join(self.src_root, SESSIONS_FOLDER)
+            if os.path.isdir(nested):
+                container = nested
+            elif os.path.basename(os.path.normpath(self.src_root)) == SESSIONS_FOLDER:
+                container = self.src_root
+            elif self._has_manifest(self.src_root):
+                # Se apunto directamente a una sesion (por ejemplo adoptada).
+                return [os.path.abspath(self.src_root)], []
+            else:
+                # Copia manual adoptada: las sesiones estan en la propia raiz.
+                container = self.src_root
+
+        subdirs = self._subdirs(container)
+        sessions = [path for path in subdirs if self._has_manifest(path)]
+        skipped = [path for path in subdirs if not self._has_manifest(path)]
+        return sessions, skipped
+
+    # --- Auditoria ------------------------------------------------------
+
+    @staticmethod
+    def _write_audit_log(dest_session_path, src_session_path, manifest_data):
+        """
+        Escribe el audit_log.txt declarando el origen real de los datos.
+
+        Una sesion adoptada fue copiada fuera del sistema, por lo que no se
+        puede certificar equivalencia bit-exacta con la tarjeta SD: solo se
+        certifica coincidencia con la linea base adoptada.
+        """
+        origin = manifest_data.get("origin", "legacy_unknown")
+        chain = manifest_data.get("chain_of_custody")
+        if not chain:
+            chain = "partial" if origin == ORIGIN_MANUAL else "full"
+
+        audit_log_path = os.path.join(dest_session_path, AUDIT_NAME)
+        with open(audit_log_path, "w", encoding="utf-8") as audit:
+            audit.write(f"Archive Timestamp: {time.ctime()}\n")
+            audit.write(f"Source: {src_session_path}\n")
+            audit.write("Status: VERIFIED OK\n")
+            audit.write(f"Origin: {origin}\n")
+            audit.write(f"Chain of custody: {chain}\n")
+
+            if origin == ORIGIN_MANUAL:
+                adopted_at = manifest_data.get("adopted_at", "?")
+                adopted_by = manifest_data.get("adopted_by", "?")
+                audit.write(
+                    "Verificado contra linea base adoptada "
+                    f"({adopted_at}, operador: {adopted_by}).\n"
+                )
+                audit.write(
+                    "ADVERTENCIA: la copia previa se realizo fuera del sistema; "
+                    "no se certifica equivalencia bit-exacta con la tarjeta SD "
+                    "de origen.\n"
+                )
+            else:
+                audit.write("Verified against original manifest hashes.\n")
+
+    # --- Ejecucion ------------------------------------------------------
+
     def run(self):
         try:
-            # 1. Locate Source Content
-            # We enforce a structure: src_root/Backup_Ingesta/<SessionFolders>
-            # But the user might select just the drive letter.
+            sessions, skipped = self._collect_sessions()
 
-            src_folder = os.path.join(self.src_root, "Backup_Ingesta")
-            if not os.path.exists(src_folder):
-                # Fallback: maybe they selected the folder directly?
-                if os.path.basename(self.src_root) == "Backup_Ingesta":
-                    src_folder = self.src_root
-                else:
-                    self.app.archive_failed(
-                        "No se encontró la carpeta 'Backup_Ingesta' en el origen."
-                    )
-                    return
+            if skipped:
+                self.app.log_message(
+                    f"AVISO: {len(skipped)} carpeta(s) sin {MANIFEST_NAME} fueron "
+                    "omitidas. Adoptelas primero para incluirlas en el archivo."
+                )
+                for path in skipped:
+                    logging.warning(f"Sin manifiesto, omitida: {path}")
 
-            # 2. Iterate over session folders
-            # We want to archive everything that hasn't been archived yet.
-            # Realistically, for this V1, we iterate all and check if they exist in dest.
-
-            session_folders = [
-                f
-                for f in os.listdir(src_folder)
-                if os.path.isdir(os.path.join(src_folder, f))
-            ]
-            if not session_folders:
+            if not sessions:
                 self.app.archive_failed(
-                    "No hay carpetas de sesión en el respaldo externo."
+                    "No se encontraron sesiones con manifiesto en el origen "
+                    f"({self.src_root}). Si la copia se hizo manualmente, "
+                    "genere primero la linea base de integridad (adopcion)."
                 )
                 return
 
-            total_sessions = len(session_folders)
+            total_sessions = len(sessions)
             processed_count = 0
 
             self.app.update_archive_status(f"Escaneando {total_sessions} sesiones...")
 
-            for folder_name in session_folders:
+            for src_session_path in sessions:
                 if self.stop_event.is_set():
                     break
 
-                src_session_path = os.path.join(src_folder, folder_name)
+                folder_name = os.path.basename(os.path.normpath(src_session_path))
                 dest_session_path = os.path.join(self.dest_root, folder_name)
+                manifest_path = os.path.join(src_session_path, MANIFEST_NAME)
 
-                # Check manifest presence
-                manifest_path = os.path.join(src_session_path, "manifest.json")
-                if not os.path.exists(manifest_path):
-                    logging.warning(f"Skipping {folder_name}: No manifest.json found.")
-                    continue
-
-                # Load manifest for verification
                 try:
-                    with open(manifest_path, "r") as f:
+                    with open(manifest_path, "r", encoding="utf-8") as f:
                         manifest_data = json.load(f)
                 except Exception as e:
                     logging.error(f"Error loading manifest for {folder_name}: {e}")
@@ -86,14 +162,12 @@ class ArchiveWorker(threading.Thread):
 
                 self.app.update_archive_status(f"Archivando: {folder_name}")
 
-                # Process Files in Session
                 files_to_copy = manifest_data.get("files", [])
                 total_files = len(files_to_copy)
 
-                # Check if already archived (Simple check: folder exists and manifest exists)
-                # In robust system, use audit log.
+                # Ya archivada previamente (carpeta destino con auditoria).
                 if os.path.exists(dest_session_path) and os.path.exists(
-                    os.path.join(dest_session_path, "audit_log.txt")
+                    os.path.join(dest_session_path, AUDIT_NAME)
                 ):
                     logging.info(f"Skipping {folder_name}: Already archived.")
                     processed_count += 1
@@ -113,52 +187,40 @@ class ArchiveWorker(threading.Thread):
                     src_file = os.path.join(src_session_path, rel_path)
                     dest_file = os.path.join(dest_session_path, rel_path)
 
-                    # Update Progress
-                    progress_pct = i / total_files
+                    progress_pct = i / total_files if total_files else 1.0
                     self.app.update_archive_progress(
                         progress_pct, f"Copiar+Audit: {rel_path}"
                     )
 
-                    # 1. Copy & Hash (Re-hashing on the fly)
                     try:
-                        # We calculate NEW hash during copy
+                        # Hash nuevo calculado durante la copia
                         new_hash = secure_copy(src_file, dest_file)
 
-                        # 2. Verify against ORIGINAL manifest
+                        # Verificacion contra el manifiesto de origen
                         if new_hash != original_hash:
                             err_msg = f"INTEGRITY ERROR: {rel_path} (Hash mismatch!)"
                             logging.error(err_msg)
                             self.app.log_message(f"CRITICAL: {err_msg}")
                             session_valid = False
-                            # We don't stop strictly, but we flag the session.
-                            # Optionally rename file to .corrupt
 
                     except Exception as e:
                         logging.error(f"Copy error {rel_path}: {e}")
                         session_valid = False
 
-                # 3. Finalize Session Archive
                 if session_valid:
-                    # Copy the manifest itself
                     secure_copy(
-                        manifest_path, os.path.join(dest_session_path, "manifest.json")
+                        manifest_path,
+                        os.path.join(dest_session_path, MANIFEST_NAME),
                     )
-
-                    # Also ensure hashes_blake3.json is present for fotogrametria-pipeline
                     save_hashes_blake3(dest_session_path, files_to_copy)
-
-                    # Create Audit Log
-                    audit_log_path = os.path.join(dest_session_path, "audit_log.txt")
-                    with open(audit_log_path, "w") as audit:
-                        audit.write(f"Archive Timestamp: {time.ctime()}\n")
-                        audit.write(f"Source: {src_session_path}\n")
-                        audit.write("Status: VERIFIED OK\n")
-                        audit.write("Verified against original manifest hashes.\n")
-
+                    self._write_audit_log(
+                        dest_session_path, src_session_path, manifest_data
+                    )
                     processed_count += 1
                 else:
                     self.app.log_message(
-                        f"ERROR: La sesión {folder_name} contiene errores de integridad."
+                        f"ERROR: La sesion {folder_name} contiene errores de "
+                        "integridad."
                     )
 
             self.app.archive_complete(processed_count)
