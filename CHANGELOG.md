@@ -1,3 +1,25 @@
+## v3.2.0 (2026-08-06)
+
+### Feat
+
+- **adopt**: permitir ingresar al flujo en cualquier etapa mediante la
+  adopcion de copias hechas manualmente (`src/lib_adopt.py`)
+- **ui**: boton "ADOPTAR CARPETA EXISTENTE", seleccion manual del destino
+  externo y seleccion libre del origen del archivo final
+- **ui**: la habilitacion de cada etapa depende de los datos disponibles en
+  disco (`stage_ready`) y ya no del hardware conectado
+- **archive**: origenes flexibles (raiz con sesiones, `Backup_Ingesta` o una
+  sesion individual) y reporte de carpetas omitidas por falta de manifiesto
+- **archive**: `audit_log.txt` declara el origen y no afirma equivalencia
+  bit-exacta con la SD cuando la sesion fue adoptada
+- **cli**: `scripts/adopt.py` para operar sin interfaz grafica
+
+### Fix
+
+- **ui**: `_archive_failed_ui` mostraba "Ingesta Completada" tras un error
+- **ui**: se eliminan el `btn_bridge` duplicado y huerfano de `frame_dest`
+- **ui**: `backup_target` se inicializa, evitando `AttributeError`
+
 ## v3.1.3 (2026-04-21)
 
 ### Feat

@@ -8,6 +8,7 @@
 - [Descripción](#-descripción)
 - [Instalación](#-instalación)
 - [Uso](#-uso)
+- [Ingreso al flujo en cualquier etapa](#-ingreso-al-flujo-en-cualquier-etapa)
 - [Estructura del Proyecto](#-estructura-del-proyecto)
 - [Tecnologías](#-tecnologías)
 - [Contribución](#-contribución)
@@ -21,6 +22,7 @@ En la fotogrametría arqueológica, la integridad de los datos es crítica. **Ba
 *   **Identificación de Hardware Universal (WMI):** Vincula los datos al número de serie físico, soportando tanto USB como lectores internos (PCIe/SCSI) y detectando tipos de tarjeta (SD, SDXC, MicroSD).
 *   **Hashing al Vuelo (BLAKE3):** Verifica la integridad de cada byte copiado sin sacrificar velocidad.
 *   **Protocolo de Cuatro Pasos:** Flujo de trabajo seguro: SD -> Local -> Externo -> Archivo Final (Servidor/NAS).
+*   **Ingreso en Cualquier Etapa (v3.2):** Permite adoptar copias que ya fueron hechas manualmente y engancharlas a las etapas 3 y 4, sin necesidad de la tarjeta SD original.
 *   **Modo Puente (Bridge):** Permite la copia desde SD a Disco Externo utilizando el disco interno como búfer temporal inteligente/volátil, ideal para equipos con poco espacio de almacenamiento.
 *   **Notificaciones de Finalización:** Al completar cualquier operación de copia (ingesta, puente, respaldo o archivo), se muestra un diálogo con resumen detallado: sesión, archivos copiados, tamaño total, destino y hora de finalización.
 
@@ -63,7 +65,7 @@ El sistema está diseñado con una interfaz de "Semáforo" de 3 paneles.
 uv run python src/main.py
 
 # O ejecutando el binario generado en /dist
-dist/BackupCamera_v3.1.2.exe
+dist/BackupCamera_v3.2.0.exe
 ```
 
 ### Interfaz Renovada (v3.1)
@@ -84,7 +86,46 @@ Se activa automáticamente cuando el espacio en disco local es insuficiente. Per
 4.  **Columna 4:** Seleccione ruta final (ej. `Z:\Proyecto`). "ARCHIVAR Y VALIDAR". Al finalizar, aparece un diálogo de confirmación.
     -   El sistema verificará que los datos en `Z:\` coincidan exactamente con el `manifest.json` original de la tarjeta SD.
 
+## 🔀 Ingreso al flujo en cualquier etapa
 
+No todo el material llega desde una tarjeta SD recién insertada. Es habitual que el respaldo y la copia **ya se hayan hecho manualmente hasta un SSD**, con una estructura propia (por ejemplo, una carpeta por pieza). Antes esas copias no podían entrar al flujo: sin `manifest.json` el módulo de archivo las omitía en silencio.
+
+La **adopción** resuelve esto: recorre los archivos ya copiados, calcula su hash BLAKE3 y escribe la línea base de integridad (`manifest.json` + `hashes_blake3.json`) **sin mover, copiar ni modificar nada**.
+
+### Desde la interfaz
+
+*   **Etapa 2 → "ADOPTAR CARPETA EXISTENTE"**: elija la carpeta e indique si cada subcarpeta es una sesión (caso "por pieza") o si toda la carpeta es una sola sesión.
+*   **Etapa 3 → "Elegir destino..."**: designa manualmente el disco de respaldo cuando no hay un `.backup_drive`, con opción de crear el marcador.
+*   **Etapa 4 → "Elegir origen..."**: archiva desde cualquier ruta (SSD, disco externo o carpeta local). Si detecta carpetas sin manifiesto, ofrece adoptarlas antes de continuar.
+
+Los botones de cada etapa se habilitan según **los datos que existen en disco**, no según el hardware conectado.
+
+### Desde la línea de comandos
+
+```bash
+# Adoptar una copia manual organizada por pieza
+uv run python scripts/adopt.py --root "D:\Piezas" --mode per-piece \
+    --operator "Nombre Apellido" --notes "Respaldo manual de terreno"
+
+# Tratar toda la carpeta como una sola sesión
+uv run python scripts/adopt.py --root "D:\Entrega" --mode single
+
+# Verificar integridad más tarde (no escribe; exit code 1 si hay desvíos)
+uv run python scripts/adopt.py --root "D:\Piezas" --verify
+```
+
+### Cadena de custodia parcial
+
+Una copia hecha fuera del sistema **no puede** certificarse como bit-exacta respecto de la tarjeta original. Por honestidad forense, la adopción es explícita al respecto:
+
+| | Ingesta desde SD | Copia adoptada |
+|---|---|---|
+| `origin` | `sd_ingest` | `manual_adopted` |
+| `chain_of_custody` | `full` | `partial` |
+| `hardware_id` | serial WMI | `null` |
+| `audit_log.txt` | "Verified against original manifest hashes" | "Verificado contra línea base adoptada" + advertencia |
+
+La adopción es **idempotente**: si la sesión ya tiene manifiesto adoptado, la segunda pasada solo verifica y reporta archivos modificados, faltantes o nuevos. Un manifiesto generado por una ingesta real desde SD **nunca** se sobrescribe, ni con `--force`.
 
 ## 📂 Estructura del Proyecto
 
@@ -92,11 +133,14 @@ Se activa automáticamente cuando el espacio en disco local es insuficiente. Per
 /
 ├── src/                 # Código fuente principal
 │   ├── lib_hardware.py  # Lógica WMI y detección de discos
-│   ├── lib_copy.py      # Motor de copia segura con BLAKE3
+│   ├── lib_copy.py      # Motor de copia segura y hashing con BLAKE3
 │   ├── lib_storage.py   # Gestión de rutas y espacio
 │   ├── lib_bridge.py    # Modo puente SD -> Interno -> Externo
 │   ├── lib_archive.py   # Módulo de archivo final con auditoría
+│   ├── lib_adopt.py     # Adopción de copias manuales (ingreso por etapa)
 │   └── main.py          # Interfaz gráfica (CustomTkinter)
+├── scripts/             # Utilidades de operación y recuperación
+│   └── adopt.py         # CLI de adopción sin interfaz gráfica
 ├── tests/               # Suite de pruebas unitarias (pytest)
 ├── knowledge/           # Base de conocimientos y documentación técnica
 ├── .github/             # Configuraciones CI/CD y Templates
@@ -138,9 +182,9 @@ Siga las instrucciones interactivas para clasificar su cambio (`feat`, `fix`, `d
 ### Releases Automáticos
 Para generar una nueva versión distribuible:
 1.  Actualice la versión en `pyproject.toml`.
-2.  Cree un tag en git: `git tag v3.1.2` (debe coincidir con la versión).
-3.  Empuje el tag: `git push origin v3.1.2`.
-4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v3.1.2.exe` y lo publicará en la sección **Releases**.
+2.  Cree un tag en git: `git tag v3.2.0` (debe coincidir con la versión).
+3.  Empuje el tag: `git push origin v3.2.0`.
+4.  GitHub Actions generará automáticamente el ejecutable `BackupCamera_v3.2.0.exe` y lo publicará en la sección **Releases**.
 
 ## ✍️ Autores
 
