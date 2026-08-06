@@ -8,17 +8,40 @@
   externo y seleccion libre del origen del archivo final
 - **ui**: la habilitacion de cada etapa depende de los datos disponibles en
   disco (`stage_ready`) y ya no del hardware conectado
+- **ui**: boton Cancelar para las operaciones que admiten detencion segura
 - **archive**: origenes flexibles (raiz con sesiones, `Backup_Ingesta` o una
   sesion individual) y reporte de carpetas omitidas por falta de manifiesto
 - **archive**: `audit_log.txt` declara el origen y no afirma equivalencia
   bit-exacta con la SD cuando la sesion fue adoptada
+- **adopt**: reporte de archivos sueltos en la raiz y de colisiones de
+  nombre en `hashes_blake3.json`
 - **cli**: `scripts/adopt.py` para operar sin interfaz grafica
 
 ### Fix
 
+- **archive**: rechazar que el origen y el destino sean la misma carpeta.
+  `secure_copy` abre el destino con "wb", que truncaba el archivo a cero
+  bytes antes de leer el origen: el dato original se perdia de forma
+  irreversible. Se valida a nivel de raiz y por sesion.
+- **storage**: normalizar las raices de unidad (`"E:"` -> `"E:\"`). En
+  Windows `"E:"` es relativa al directorio actual de esa unidad, por lo que
+  las rutas derivadas apuntaban a carpetas arbitrarias.
+- **archive**: detectar colisiones de nombre de sesion en el destino
+  comparando la huella del manifiesto. Antes, una segunda sesion distinta
+  con el mismo nombre se omitia y se contaba como archivada.
+- **adopt**: aislar los errores por sesion; un archivo ilegible ya no aborta
+  la corrida completa
+- **adopt**: permitir cancelar la adopcion (`stop_event`)
 - **ui**: `_archive_failed_ui` mostraba "Ingesta Completada" tras un error
 - **ui**: se eliminan el `btn_bridge` duplicado y huerfano de `frame_dest`
 - **ui**: `backup_target` se inicializa, evitando `AttributeError`
+
+### Docs
+
+- agregar `docs/GUIA_PRIMEROS_PASOS.md` y `docs/CHECKLIST_TERRENO.md` para
+  personas que se incorporan al respaldo
+- documentar la cadena de custodia parcial, los limites de la adopcion y los
+  comportamientos que sorprenden en la practica
 
 ## v3.1.3 (2026-04-21)
 

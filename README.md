@@ -4,16 +4,31 @@
 
 > Sistema de ingesta forense de datos para contextos arqueológicos, garantizando la Cadena de Custodia Digital mediante verificación de hardware y hashing criptográfico.
 
+### 👋 ¿Se está incorporando al respaldo del laboratorio?
+
+Empiece por la **[Guía de primeros pasos](docs/GUIA_PRIMEROS_PASOS.md)**: explica
+cómo preparar el disco, respaldar paso a paso, qué hacer si las fotos ya se
+copiaron a mano y cómo comprobar que un respaldo está realmente completo antes
+de formatear una tarjeta. Para tener sobre la mesa: **[checklist de una
+página](docs/CHECKLIST_TERRENO.md)**.
+
+| Si usted quiere… | Lea |
+|---|---|
+| **Operar** el sistema (respaldar, preparar discos, verificar) | [`docs/GUIA_PRIMEROS_PASOS.md`](docs/GUIA_PRIMEROS_PASOS.md) |
+| Un recordatorio breve para terreno | [`docs/CHECKLIST_TERRENO.md`](docs/CHECKLIST_TERRENO.md) |
+| **Entender** las decisiones técnicas y el historial de errores | [`knowledge/knowledge.md`](knowledge/knowledge.md) |
+| **Desarrollar** o contribuir | Este archivo y [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+
 ## 📋 Tabla de Contenidos
 - [Descripción](#-descripción)
-- [Instalación](#-instalación)
+- [Instalación](#️-instalación)
 - [Uso](#-uso)
 - [Ingreso al flujo en cualquier etapa](#-ingreso-al-flujo-en-cualquier-etapa)
 - [Estructura del Proyecto](#-estructura-del-proyecto)
-- [Tecnologías](#-tecnologías)
+- [Tecnologías](#️-tecnologías)
 - [Contribución](#-contribución)
 - [Licencia](#-licencia)
-- [Autores](#-autores)
+- [Autores](#️-autores)
 
 ## 🚀 Descripción
 En la fotogrametría arqueológica, la integridad de los datos es crítica. **Backup Camera** elimina la incertidumbre en el proceso de descarga de tarjetas de memoria, transformando una copia simple en un proceso auditado.
@@ -57,7 +72,9 @@ En la fotogrametría arqueológica, la integridad de los datos es crítica. **Ba
 
 ## 💻 Uso
 
-El sistema está diseñado con una interfaz de "Semáforo" de 3 paneles.
+> Para el procedimiento operativo detallado, con capturas de decisiones y
+> solución de problemas, use la [Guía de primeros pasos](docs/GUIA_PRIMEROS_PASOS.md).
+> Esta sección es un resumen técnico.
 
 ### Ejecución
 ```bash
@@ -68,23 +85,36 @@ uv run python src/main.py
 dist/BackupCamera_v3.2.0.exe
 ```
 
-### Interfaz Renovada (v3.1)
-El sistema presenta una interfaz panorámica de **4 Columnas**:
+Ejecutar **como administrador**: sin privilegios elevados, WMI puede devolver
+el número de serie de la tarjeta vacío y la etapa 1 no se habilita.
+
+### Interfaz de 4 Columnas
 1.  **Origen (Naranja):** Detección de Tarjetas SD.
-2.  **Ingesta (Azul):** Transferencia segura a PC Local.
+2.  **Ingesta (Azul):** Transferencia segura a PC Local, o adopción de copias manuales.
 3.  **Respaldo (Verde):** Clonación a Disco Externo.
 4.  **Archivo Final (Púrpura):** Auditoría y transferencia a Servidor/NAS.
 
-### Nivel "Modo Puente" (Mejorado v3.1.2)
-Se activa automáticamente cuando el espacio en disco local es insuficiente. Permite la copia segura desde SD a Disco Externo utilizando el disco interno como búfer temporal volátil fragmentado.
-**Seguridad Garantizada:** El sistema verifica recursivamente el tamaño del disco raíz y previene cuelgues del SO evaluando que ningún archivo individual sobrepase el espacio libre seguro.
-
 ### Flujo de Trabajo
 1.  **Columna 1:** Inserte la tarjeta SD. El sistema valida ID de hardware.
-2.  **Columna 2:** "INICIAR COPIA". Ingesta verificada a repositorio local. Al finalizar, aparece un diálogo de confirmación con resumen de la sesión.
-3.  **Columna 3:** Conecte disco externo (con archivo `.backup_drive`). "CLONAR". Al finalizar, aparece un diálogo de confirmación.
-4.  **Columna 4:** Seleccione ruta final (ej. `Z:\Proyecto`). "ARCHIVAR Y VALIDAR". Al finalizar, aparece un diálogo de confirmación.
-    -   El sistema verificará que los datos en `Z:\` coincidan exactamente con el `manifest.json` original de la tarjeta SD.
+2.  **Columna 2:** "INICIAR COPIA". Ingesta verificada a repositorio local.
+3.  **Columna 3:** Conecte disco externo (con archivo `.backup_drive`). "CLONAR".
+4.  **Columna 4:** Seleccione ruta final (ej. `Z:\Proyecto`). "ARCHIVAR Y VALIDAR".
+    -   El sistema verifica que los datos en `Z:\` coincidan exactamente con el `manifest.json` original y escribe un `audit_log.txt` como certificado.
+
+> **Criterio para liberar una tarjeta:** la presencia de `audit_log.txt` con
+> `Status: VERIFIED OK` en la carpeta de la sesión en el destino final. El
+> diálogo de la interfaz no es evidencia suficiente.
+
+### Nivel "Modo Puente" (Mejorado v3.1.2)
+Se activa cuando el espacio en disco local es insuficiente. Permite la copia segura desde SD a Disco Externo utilizando el disco interno como búfer temporal volátil fragmentado.
+**Seguridad Garantizada:** El sistema verifica recursivamente el tamaño del disco raíz y previene cuelgues del SO evaluando que ningún archivo individual sobrepase el espacio libre seguro.
+
+### Salvaguardas y comportamientos a tener presentes
+*   **Marcador obligatorio:** un disco externo solo se reconoce si tiene `.backup_drive` en su raíz. Evita clonar al disco equivocado.
+*   **Detección única:** si hay varios discos con marcador, se elige el de letra alfabéticamente menor. Use "Elegir destino..." para forzar otro.
+*   **Origen distinto de destino:** archivar una carpeta sobre sí misma se bloquea, porque `secure_copy` trunca el archivo de destino antes de leer el origen.
+*   **Sin sobrescritura:** el respaldo a externo omite las carpetas de sesión que ya existan en el destino (no las completa). Una copia interrumpida debe eliminarse o renombrarse antes de reintentar.
+*   **Colisión de nombres de sesión:** al archivar, si el destino ya tiene una sesión distinta con el mismo nombre, la nueva se guarda con sufijo de fecha y se reporta el conflicto.
 
 ## 🔀 Ingreso al flujo en cualquier etapa
 
@@ -114,6 +144,11 @@ uv run python scripts/adopt.py --root "D:\Entrega" --mode single
 uv run python scripts/adopt.py --root "D:\Piezas" --verify
 ```
 
+Estados posibles por sesión: `adopted`, `verified`, `drift`, `error`,
+`loose_files`, `empty`, `protected`, `no_manifest`, `cancelled`.
+Códigos de salida: `0` sin observaciones, `1` hay desvíos o errores, `2` no se
+pudo iniciar.
+
 ### Cadena de custodia parcial
 
 Una copia hecha fuera del sistema **no puede** certificarse como bit-exacta respecto de la tarjeta original. Por honestidad forense, la adopción es explícita al respecto:
@@ -127,6 +162,12 @@ Una copia hecha fuera del sistema **no puede** certificarse como bit-exacta resp
 
 La adopción es **idempotente**: si la sesión ya tiene manifiesto adoptado, la segunda pasada solo verifica y reporta archivos modificados, faltantes o nuevos. Un manifiesto generado por una ingesta real desde SD **nunca** se sobrescribe, ni con `--force`.
 
+### Límites de la adopción
+
+*   **No es recursiva:** solo considera el primer nivel de subcarpetas. Una estructura `Sitio\Unidad\Pieza` requiere adoptar cada nivel intermedio.
+*   **Archivos sueltos en la raíz** quedan fuera en modo por-subcarpeta; se reportan como `loose_files`.
+*   **`hashes_blake3.json` aplana las claves a basename** por contrato con `fotogrametria-pipeline`, de modo que nombres repetidos dentro de una misma sesión colisionan y solo sobrevive el último hash. El `manifest.json` conserva las rutas completas y el sistema advierte del caso.
+
 ## 📂 Estructura del Proyecto
 
 ```text
@@ -134,15 +175,18 @@ La adopción es **idempotente**: si la sesión ya tiene manifiesto adoptado, la 
 ├── src/                 # Código fuente principal
 │   ├── lib_hardware.py  # Lógica WMI y detección de discos
 │   ├── lib_copy.py      # Motor de copia segura y hashing con BLAKE3
-│   ├── lib_storage.py   # Gestión de rutas y espacio
+│   ├── lib_storage.py   # Gestión de rutas, espacio y normalización de raíces
 │   ├── lib_bridge.py    # Modo puente SD -> Interno -> Externo
 │   ├── lib_archive.py   # Módulo de archivo final con auditoría
 │   ├── lib_adopt.py     # Adopción de copias manuales (ingreso por etapa)
 │   └── main.py          # Interfaz gráfica (CustomTkinter)
+├── docs/                # Documentación operativa (para quien usa el sistema)
+│   ├── GUIA_PRIMEROS_PASOS.md
+│   └── CHECKLIST_TERRENO.md
 ├── scripts/             # Utilidades de operación y recuperación
 │   └── adopt.py         # CLI de adopción sin interfaz gráfica
 ├── tests/               # Suite de pruebas unitarias (pytest)
-├── knowledge/           # Base de conocimientos y documentación técnica
+├── knowledge/           # Base de conocimientos y decisiones técnicas
 ├── .github/             # Configuraciones CI/CD y Templates
 ├── build.py             # Script de construcción PyInstaller
 ├── pyproject.toml       # Definición de dependencias
@@ -178,6 +222,10 @@ Este proyecto utiliza **Conventional Commits**. Para realizar cambios, utilice:
 uv run cz commit
 ```
 Siga las instrucciones interactivas para clasificar su cambio (`feat`, `fix`, `docs`, etc.).
+
+> En entornos sin terminal interactiva (CI, agentes), use
+> `uv run cz commit -m "feat: descripción"` o `git commit` con el formato
+> convencional; el prompt interactivo bloquea la ejecución.
 
 ### Releases Automáticos
 Para generar una nueva versión distribuible:
