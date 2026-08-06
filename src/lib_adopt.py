@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import threading
+from typing import Any, Dict
 
 from lib_copy import hash_file
 from lib_storage import save_hashes_blake3
@@ -136,7 +137,11 @@ def inspect_root(root):
       - "without_manifest": subcarpetas que requieren adopcion.
     """
     root = os.path.abspath(root)
-    result = {"self": False, "with_manifest": [], "without_manifest": []}
+    result: Dict[str, Any] = {
+        "self": False,
+        "with_manifest": [],
+        "without_manifest": [],
+    }
 
     if not os.path.isdir(root):
         return result
@@ -161,7 +166,7 @@ def inspect_root(root):
 
 
 def _report(session_path, status, **extra):
-    base = {
+    base: Dict[str, Any] = {
         "session": session_path,
         "name": os.path.basename(os.path.normpath(session_path)),
         "status": status,
@@ -184,7 +189,7 @@ def _warn_duplicate_basenames(session_path, entries):
     sobrevive el ultimo de cada nombre: hay que advertirlo explicitamente.
     El manifest.json si conserva la ruta relativa completa.
     """
-    seen = {}
+    seen: Dict[str, Any] = {}
     for entry in entries:
         seen.setdefault(os.path.basename(entry["path"]), []).append(entry["path"])
 
@@ -236,7 +241,7 @@ def verify_session(session_path, progress_cb=None):
             message=f"La sesion no tiene {MANIFEST_NAME}.",
         )
 
-    recorded = {}
+    recorded: Dict[str, Any] = {}
     for entry in manifest.get("files", []):
         if entry.get("path"):
             recorded[entry["path"]] = entry
@@ -327,7 +332,7 @@ def adopt_session(
     _warn_duplicate_basenames(session_path, entries)
 
     now = datetime.datetime.now()
-    manifest = {
+    manifest: Dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "origin": ORIGIN_MANUAL,
         "chain_of_custody": CHAIN_PARTIAL,
@@ -396,20 +401,22 @@ def adopt_root(
 
 def summarize(reports):
     """Resumen agregado de una corrida de adopcion o verificacion."""
-    summary = {
-        "sessions": len(reports),
-        "files": sum(report.get("files", 0) for report in reports),
-        "bytes": sum(report.get("bytes", 0) for report in reports),
-        "by_status": {},
-        "has_problems": False,
-    }
+    by_status: Dict[str, int] = {}
+    has_problems = False
 
     for report in reports:
         status = report.get("status", "unknown")
-        summary["by_status"][status] = summary["by_status"].get(status, 0) + 1
+        by_status[status] = by_status.get(status, 0) + 1
         if status in PROBLEM_STATUSES:
-            summary["has_problems"] = True
+            has_problems = True
 
+    summary: Dict[str, Any] = {
+        "sessions": len(reports),
+        "files": sum(report.get("files", 0) for report in reports),
+        "bytes": sum(report.get("bytes", 0) for report in reports),
+        "by_status": by_status,
+        "has_problems": has_problems,
+    }
     return summary
 
 
