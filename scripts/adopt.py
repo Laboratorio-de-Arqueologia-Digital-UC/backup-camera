@@ -61,10 +61,14 @@ def parse_args(argv=None):
         help="per-piece: una sesion por subcarpeta. single: la raiz es una sesion.",
     )
     parser.add_argument(
-        "--operator", default=None, help="Responsable de la adopcion."
+        "--operator",
+        default=None,
+        help="Responsable de la adopcion.",
     )
     parser.add_argument(
-        "--notes", default=None, help="Observaciones de procedencia."
+        "--notes",
+        default=None,
+        help="Observaciones de procedencia.",
     )
     parser.add_argument(
         "--entry-stage",

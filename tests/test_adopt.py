@@ -74,9 +74,9 @@ def test_adopcion_por_pieza_genera_manifiesto_y_hashes(ssd_por_pieza):
 
     assert [r["status"] for r in reportes] == [STATUS_ADOPTED, STATUS_ADOPTED]
 
-    manifiesto = json.loads(
-        (ssd_por_pieza / "Pieza_001" / "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest_path = ssd_por_pieza / "Pieza_001" / "manifest.json"
+    manifiesto = json.loads(manifest_path.read_text(encoding="utf-8"))
+
     assert manifiesto["origin"] == ORIGIN_MANUAL
     assert manifiesto["chain_of_custody"] == "partial"
     assert manifiesto["adopted_by"] == "Victor Mendez"
@@ -84,11 +84,9 @@ def test_adopcion_por_pieza_genera_manifiesto_y_hashes(ssd_por_pieza):
     assert len(manifiesto["files"]) == 2
     assert all(len(f["hash"]) == 64 for f in manifiesto["files"])
 
-    hashes = json.loads(
-        (ssd_por_pieza / "Pieza_001" / "hashes_blake3.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    hashes_path = ssd_por_pieza / "Pieza_001" / "hashes_blake3.json"
+    hashes = json.loads(hashes_path.read_text(encoding="utf-8"))
+
     assert set(hashes) == {"IMG_0001.CR2", "IMG_0002.CR2"}
 
 
@@ -103,6 +101,7 @@ def test_adopcion_no_mueve_ni_altera_archivos(ssd_por_pieza):
 
 def test_adopcion_es_idempotente(ssd_por_pieza):
     adopt_root(str(ssd_por_pieza), operator="Victor")
+
     manifiesto = ssd_por_pieza / "Pieza_001" / "manifest.json"
     contenido_original = manifiesto.read_text(encoding="utf-8")
 
@@ -204,6 +203,7 @@ def test_archivo_final_acepta_sesiones_adoptadas_en_la_raiz(ssd_por_pieza, tmp_p
     assert (destino / "Pieza_002" / "IMG_0003.CR2").exists()
 
     audit = (destino / "Pieza_001" / "audit_log.txt").read_text(encoding="utf-8")
+
     assert ORIGIN_MANUAL in audit
     assert "linea base adoptada" in audit
     assert "bit-exacta" in audit
