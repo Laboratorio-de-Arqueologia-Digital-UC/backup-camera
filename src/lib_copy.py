@@ -53,23 +53,47 @@ def secure_copy(src, dst, callback_progress=None):
         raise IOError(f"Failed to copy {src} to {dst}: {e}")
 
 
-def verify_hash(file_path, expected_hash):
+def hash_file(file_path, callback_progress=None):
     """
-    Recalculates hash of a file and compares with expected_hash.
+    Calculates the BLAKE3 hash of an existing file, without copying it.
+
+    Used to build a retroactive integrity baseline over data that was already
+    copied outside the system (see lib_adopt). Note this is different from
+    scripts/generate_blake3_hashes.py, which only re-derives the flat hash map
+    from an existing manifest and never reads the actual file bytes.
+
+    Args:
+        file_path (str): File to hash.
+        callback_progress (callable): Function(bytes_read, total_size).
+
+    Returns:
+        str: The hexadecimal BLAKE3 hash of the file.
     """
     hasher = blake3.blake3()
     buffer_size = 1024 * 1024  # 1MB
 
-    try:
-        with open(file_path, "rb") as f:
-            while True:
-                chunk = f.read(buffer_size)
-                if not chunk:
-                    break
-                hasher.update(chunk)
+    total_size = os.path.getsize(file_path)
+    read = 0
 
-        actual_hash = hasher.hexdigest()
-        return actual_hash == expected_hash
+    with open(file_path, "rb") as handle:
+        while True:
+            chunk = handle.read(buffer_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+            read += len(chunk)
+            if callback_progress:
+                callback_progress(read, total_size)
+
+    return hasher.hexdigest()
+
+
+def verify_hash(file_path, expected_hash):
+    """
+    Recalculates hash of a file and compares with expected_hash.
+    """
+    try:
+        return hash_file(file_path) == expected_hash
     except Exception as e:
         logging.error(f"Error verifying hash for {file_path}: {e}")
         return False
