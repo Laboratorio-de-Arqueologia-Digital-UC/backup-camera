@@ -9,7 +9,7 @@
 
 1. Formatear: **NTFS** si es solo Windows, **exFAT** si también se usa en Mac.
 2. Etiquetar el disco (`RESPALDO_LAD_01`) y rotularlo físicamente igual.
-3. Crear el marcador en la **raíz** del disco:
+3. Crear el marcador en la **raíz** del disco (no dentro de una carpeta):
    ```
    type nul > E:\.backup_drive
    ```
