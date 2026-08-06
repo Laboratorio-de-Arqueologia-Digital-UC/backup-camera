@@ -60,6 +60,10 @@ PROBLEM_STATUSES = (
     STATUS_LOOSE,
 )
 
+# Estados informativos sobre la carpeta raiz: NO son sesiones. Contarlos como
+# tales inflaria el recuento del reporte (3 piezas + 1 aviso = "4 sesiones").
+ADVISORY_STATUSES = (STATUS_LOOSE,)
+
 # Archivos de control del propio sistema: nunca entran al manifiesto.
 EXCLUDED_FILES = {
     MANIFEST_NAME.lower(),
@@ -524,18 +528,32 @@ def adopt_root(
 
 
 def summarize(reports):
-    """Resumen agregado de una corrida de adopcion o verificacion."""
+    """
+    Resumen agregado de una corrida de adopcion o verificacion.
+
+    Los estados informativos (ver ADVISORY_STATUSES) se cuentan aparte en
+    "advisories": no son sesiones y no deben inflar el recuento del reporte.
+    """
     by_status: Dict[str, int] = {}
     has_problems = False
+    sessions = 0
+    advisories = 0
 
     for report in reports:
         status = report.get("status", "unknown")
         by_status[status] = by_status.get(status, 0) + 1
+
+        if status in ADVISORY_STATUSES:
+            advisories += 1
+        else:
+            sessions += 1
+
         if status in PROBLEM_STATUSES:
             has_problems = True
 
     summary: Dict[str, Any] = {
-        "sessions": len(reports),
+        "sessions": sessions,
+        "advisories": advisories,
         "files": sum(report.get("files", 0) for report in reports),
         "bytes": sum(report.get("bytes", 0) for report in reports),
         "by_status": by_status,

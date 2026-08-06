@@ -21,6 +21,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -49,6 +50,16 @@ def human_size(num_bytes):
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} TB"
+
+
+def human_duration(seconds):
+    if seconds < 60:
+        return f"{seconds:.1f} s"
+    minutes, rest = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)} min {int(rest)} s"
+    hours, minutes = divmod(int(minutes), 60)
+    return f"{hours} h {minutes} min"
 
 
 def parse_args(argv=None):
@@ -128,6 +139,8 @@ def main(argv=None):
         format="%(levelname)s: %(message)s",
     )
 
+    started = time.monotonic()
+
     try:
         reports = adopt_root(
             args.root,
@@ -145,6 +158,8 @@ def main(argv=None):
         print(f"ERROR de E/S: {exc}")
         return 2
 
+    elapsed = time.monotonic() - started
+
     modo = args.mode + (" (solo verificacion)" if args.verify else "")
     print(f"\nRaiz: {os.path.abspath(args.root)}")
     print(f"Modo: {modo}\n")
@@ -157,6 +172,18 @@ def main(argv=None):
         f"\nResumen: {summary['sessions']} sesion(es), "
         f"{summary['files']} archivo(s), {human_size(summary['bytes'])}"
     )
+    if summary["advisories"]:
+        print(f"Avisos sobre la carpeta raiz: {summary['advisories']}")
+
+    # El tiempo permite dimensionar una temporada completa a partir de una
+    # prueba pequena, y detectar un disco que responde mas lento de lo normal.
+    linea_tiempo = f"Tiempo: {human_duration(elapsed)}"
+    if elapsed > 0 and summary["bytes"] > 0:
+        rate = summary["bytes"] / elapsed
+        linea_tiempo += f"  ({human_size(rate)}/s)"
+    print(linea_tiempo)
+
+    print("Estado por sesion:")
     for status, count in sorted(summary["by_status"].items()):
         print(f"  {status}: {count}")
 
