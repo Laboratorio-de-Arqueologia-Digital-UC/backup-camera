@@ -23,10 +23,12 @@ from lib_adopt import (  # noqa: E402
     AdoptionError,
     adopt_root,
     adopt_session,
+    collect_advisories,
     collect_duplicate_warnings,
     inspect_root,
     pending_adoption,
     scan_manual_folder,
+    summarize,
     verify_session,
 )
 from lib_archive import ArchiveWorker  # noqa: E402
@@ -137,6 +139,35 @@ def test_verificacion_detecta_desvios(ssd_por_pieza):
     assert reporte["added"] == ["IMG_9999.CR2"]
 
 
+def test_verificacion_detecta_un_solo_byte_alterado(tmp_path):
+    """
+    Corrupcion silenciosa: un bit distinto en medio de un archivo grande.
+
+    Es el escenario que justifica todo el sistema, asi que se comprueba de
+    forma explicita y con fsync, para que la escritura llegue al disco.
+    """
+    pieza = tmp_path / "Pieza_X"
+    pieza.mkdir()
+    archivo = pieza / "IMG_0001.CR2"
+    archivo.write_bytes(bytes(range(256)) * 4096)  # 1 MB determinista
+
+    assert adopt_session(str(pieza), operator="prueba")["status"] == STATUS_ADOPTED
+
+    with open(archivo, "r+b") as handle:
+        handle.seek(1000)
+        original = handle.read(1)[0]
+        handle.seek(1000)
+        handle.write(bytes([original ^ 0xFF]))
+        handle.flush()
+        os.fsync(handle.fileno())
+
+    reporte = verify_session(str(pieza))
+
+    assert reporte["status"] == STATUS_DRIFT
+    assert reporte["modified"] == ["IMG_0001.CR2"]
+    assert summarize([reporte])["has_problems"] is True
+
+
 def test_no_sobrescribe_manifiesto_de_ingesta_sd(ssd_por_pieza):
     pieza = ssd_por_pieza / "Pieza_002"
     original = {"origin": ORIGIN_SD, "chain_of_custody": "full", "files": []}
@@ -214,11 +245,51 @@ def test_pending_adoption_resuelve_backup_ingesta(tmp_path):
     assert pending_adoption(str(externo)) == []
 
 
-# --- Robustez de la adopcion ----------------------------------------------
+# --- Severidad: avisos frente a problemas de integridad --------------------
 
 
-def test_error_en_una_pieza_no_pierde_las_demas(ssd_por_pieza, monkeypatch):
-    """Un archivo bloqueado no debe invalidar el trabajo de las otras piezas."""
+def test_archivos_sueltos_se_reportan_pero_no_bloquean(ssd_por_pieza):
+    """
+    Un archivo suelto es una observacion sobre la organizacion, no una falla.
+
+    Si marcara has_problems, la verificacion periodica alertaria siempre
+    (esos archivos suelen quedarse ahi) y la alarma perderia todo su valor.
+    """
+    (ssd_por_pieza / "notas_terreno.txt").write_bytes(b"apuntes")
+
+    reportes = adopt_root(str(ssd_por_pieza), operator="Victor")
+    sueltos = [r for r in reportes if r["status"] == STATUS_LOOSE]
+    summary = summarize(reportes)
+
+    assert len(sueltos) == 1
+    assert sueltos[0]["loose"] == ["notas_terreno.txt"]
+
+    # Visible en el reporte...
+    assert summary["has_advisories"] is True
+    assert summary["advisories"] == 1
+    assert collect_advisories(reportes)
+
+    # ...pero sin bloquear el flujo ni contarse como sesion.
+    assert summary["has_problems"] is False
+    assert summary["sessions"] == 2
+
+
+def test_un_desvio_bloquea_aunque_haya_avisos(ssd_por_pieza):
+    """La integridad manda: un drift alerta incluso con avisos presentes."""
+    (ssd_por_pieza / "notas_terreno.txt").write_bytes(b"apuntes")
+    adopt_root(str(ssd_por_pieza), operator="Victor")
+
+    (ssd_por_pieza / "Pieza_001" / "IMG_0001.CR2").write_bytes(b"CORRUPTO")
+
+    summary = summarize(adopt_root(str(ssd_por_pieza), verify_only=True))
+
+    assert summary["has_problems"] is True
+    assert summary["has_advisories"] is True
+    assert summary["by_status"][STATUS_DRIFT] == 1
+
+
+def test_error_de_lectura_si_bloquea(ssd_por_pieza, monkeypatch):
+    """Un archivo ilegible es un problema de integridad, no un aviso."""
     import lib_adopt
 
     real_hash_file = lib_adopt.hash_file
@@ -235,18 +306,14 @@ def test_error_en_una_pieza_no_pierde_las_demas(ssd_por_pieza, monkeypatch):
 
     assert estados["Pieza_001"] == STATUS_ERROR
     assert estados["Pieza_002"] == STATUS_ADOPTED
+    assert summarize(reportes)["has_problems"] is True
+
+    # El aislamiento se mantiene: la otra pieza si quedo adoptada.
     assert (ssd_por_pieza / "Pieza_002" / "manifest.json").exists()
     assert not (ssd_por_pieza / "Pieza_001" / "manifest.json").exists()
 
 
-def test_archivos_sueltos_en_la_raiz_se_reportan(ssd_por_pieza):
-    (ssd_por_pieza / "notas_terreno.txt").write_bytes(b"apuntes")
-
-    reportes = adopt_root(str(ssd_por_pieza), operator="Victor")
-    sueltos = [r for r in reportes if r["status"] == STATUS_LOOSE]
-
-    assert len(sueltos) == 1
-    assert sueltos[0]["loose"] == ["notas_terreno.txt"]
+# --- Robustez de la adopcion ----------------------------------------------
 
 
 def test_cancelacion_detiene_la_adopcion(ssd_por_pieza):
@@ -293,7 +360,7 @@ def test_normalize_root_convierte_unidad_en_ruta_absoluta():
 
 def test_archivo_final_acepta_sesiones_adoptadas_en_la_raiz(ssd_por_pieza, tmp_path):
     adopt_root(str(ssd_por_pieza), operator="Victor Mendez")
-    destino = tmp_path / "NAS"
+    destino = tmp_path / "Deposito"
 
     app = MockApp()
     ArchiveWorker(str(ssd_por_pieza), str(destino), app).run()
@@ -312,7 +379,7 @@ def test_archivo_final_acepta_sesiones_adoptadas_en_la_raiz(ssd_por_pieza, tmp_p
 
 def test_archivo_final_reporta_sesiones_sin_manifiesto(ssd_por_pieza, tmp_path):
     adopt_session(str(ssd_por_pieza / "Pieza_001"), operator="Victor")
-    destino = tmp_path / "NAS"
+    destino = tmp_path / "Deposito"
 
     app = MockApp()
     ArchiveWorker(str(ssd_por_pieza), str(destino), app).run()
@@ -325,7 +392,7 @@ def test_archivo_final_reporta_sesiones_sin_manifiesto(ssd_por_pieza, tmp_path):
 def test_archivo_final_acepta_una_sesion_directa(ssd_por_pieza, tmp_path):
     pieza = ssd_por_pieza / "Pieza_002"
     adopt_session(str(pieza), operator="Victor")
-    destino = tmp_path / "NAS"
+    destino = tmp_path / "Deposito"
 
     app = MockApp()
     ArchiveWorker(str(pieza), str(destino), app).run()
@@ -367,7 +434,7 @@ def test_archivo_final_rechaza_sesion_con_origen_igual_a_destino(tmp_path):
 
 def test_archivo_final_no_sobrescribe_sesiones_homonimas(tmp_path):
     """Dos SSD distintos pueden traer una 'Pieza_001' con contenido distinto."""
-    destino = tmp_path / "NAS"
+    destino = tmp_path / "Deposito"
 
     primero = tmp_path / "SSD_A"
     (primero / "Pieza_001").mkdir(parents=True)
@@ -389,7 +456,7 @@ def test_archivo_final_no_sobrescribe_sesiones_homonimas(tmp_path):
     assert app_b.completed_count == 1
     assert any("CONFLICTO" in msg for msg in app_b.log)
 
-    # El primero no fue sobrescrito y el segundo si llego al NAS.
+    # El primero no fue sobrescrito y el segundo si llego al deposito.
     assert (destino / "Pieza_001" / "IMG.CR2").read_bytes() == b"PRIMERO"
 
     nombres = os.listdir(destino)
@@ -402,7 +469,7 @@ def test_archivo_final_no_sobrescribe_sesiones_homonimas(tmp_path):
 
 def test_archivo_final_es_idempotente_para_la_misma_sesion(ssd_por_pieza, tmp_path):
     adopt_root(str(ssd_por_pieza), operator="Victor")
-    destino = tmp_path / "NAS"
+    destino = tmp_path / "Deposito"
 
     primera = MockApp()
     ArchiveWorker(str(ssd_por_pieza), str(destino), primera).run()
