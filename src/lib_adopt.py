@@ -51,17 +51,19 @@ STATUS_ERROR = "error"
 STATUS_LOOSE = "loose_files"
 STATUS_CANCELLED = "cancelled"
 
-# Estados que exigen atencion del operador (exit code != 0 en el CLI).
+# Estados que comprometen la integridad de los datos. Son los unicos que
+# exigen detener el trabajo, y los unicos que producen exit code 1 en el CLI.
 PROBLEM_STATUSES = (
     STATUS_DRIFT,
     STATUS_PROTECTED,
     STATUS_NO_MANIFEST,
     STATUS_ERROR,
-    STATUS_LOOSE,
 )
 
-# Estados informativos sobre la carpeta raiz: NO son sesiones. Contarlos como
-# tales inflaria el recuento del reporte (3 piezas + 1 aviso = "4 sesiones").
+# Estados informativos sobre la carpeta raiz. NO son sesiones (contarlos como
+# tales inflaria el recuento: 3 piezas + 1 aviso = "4 sesiones") y NO alteran
+# el codigo de salida: un archivo suelto suele quedarse ahi de forma
+# permanente, y una alarma que suena en cada verificacion deja de mirarse.
 ADVISORY_STATUSES = (STATUS_LOOSE,)
 
 # Archivos de control del propio sistema: nunca entran al manifiesto.
@@ -531,11 +533,18 @@ def summarize(reports):
     """
     Resumen agregado de una corrida de adopcion o verificacion.
 
-    Los estados informativos (ver ADVISORY_STATUSES) se cuentan aparte en
-    "advisories": no son sesiones y no deben inflar el recuento del reporte.
+    Distingue dos niveles de severidad:
+      - has_problems: hay un compromiso de integridad. Exige detener el
+        trabajo y es lo unico que produce exit code 1.
+      - has_advisories: hay observaciones sobre la organizacion de la carpeta
+        (archivos sueltos). Se informan, pero no bloquean.
+
+    Mezclar ambos niveles haria que la verificacion periodica alertara
+    siempre, y una alarma permanente equivale a ninguna alarma.
     """
     by_status: Dict[str, int] = {}
     has_problems = False
+    has_advisories = False
     sessions = 0
     advisories = 0
 
@@ -545,6 +554,7 @@ def summarize(reports):
 
         if status in ADVISORY_STATUSES:
             advisories += 1
+            has_advisories = True
         else:
             sessions += 1
 
@@ -558,8 +568,18 @@ def summarize(reports):
         "bytes": sum(report.get("bytes", 0) for report in reports),
         "by_status": by_status,
         "has_problems": has_problems,
+        "has_advisories": has_advisories,
     }
     return summary
+
+
+def collect_advisories(reports):
+    """Mensajes de los estados informativos, para mostrarlos aparte."""
+    messages = []
+    for report in reports:
+        if report.get("status") in ADVISORY_STATUSES and report.get("message"):
+            messages.append(report["message"])
+    return messages
 
 
 def collect_duplicate_warnings(reports):
@@ -633,6 +653,9 @@ class AdoptWorker(threading.Thread):
                 ),
                 stop_event=self.stop_event,
             )
+
+            for message in collect_advisories(reports):
+                self._notify("log_message", f"AVISO: {message}")
 
             for message in collect_duplicate_warnings(reports):
                 self._notify("log_message", f"AVISO: {message}")

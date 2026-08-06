@@ -9,12 +9,14 @@ Uso tipico (copia manual en SSD, una carpeta por pieza):
     uv run python scripts/adopt.py --root "D:\\Piezas" --mode per-piece \\
         --operator "Victor Mendez" --notes "Respaldo manual de terreno"
 
-Verificacion posterior (no escribe nada, exit code 1 si hay desvios):
+Verificacion posterior (no escribe nada):
 
     uv run python scripts/adopt.py --root "D:\\Piezas" --verify
 
-Codigos de salida: 0 sin observaciones, 1 con desvios o sesiones con error,
-2 si la operacion no pudo iniciarse.
+Codigos de salida:
+    0  sin problemas de integridad (puede haber avisos informativos)
+    1  hay desvios, errores o manifiestos protegidos: revisar antes de seguir
+    2  la operacion no pudo iniciarse
 """
 
 import argparse
@@ -32,6 +34,7 @@ from lib_adopt import (  # noqa: E402
     MODE_SINGLE,
     AdoptionError,
     adopt_root,
+    collect_advisories,
     collect_duplicate_warnings,
     summarize,
 )
@@ -172,8 +175,6 @@ def main(argv=None):
         f"\nResumen: {summary['sessions']} sesion(es), "
         f"{summary['files']} archivo(s), {human_size(summary['bytes'])}"
     )
-    if summary["advisories"]:
-        print(f"Avisos sobre la carpeta raiz: {summary['advisories']}")
 
     # El tiempo permite dimensionar una temporada completa a partir de una
     # prueba pequena, y detectar un disco que responde mas lento de lo normal.
@@ -193,11 +194,23 @@ def main(argv=None):
         for message in warnings:
             print(f"  - {message}")
 
+    # Los avisos se muestran siempre, pero no alteran el codigo de salida:
+    # son observaciones sobre la organizacion, no fallas de integridad.
+    advisories = collect_advisories(reports)
+    if advisories:
+        print("\nAvisos (no bloquean el flujo):")
+        for message in advisories:
+            print(f"  - {message}")
+
     if summary["has_problems"]:
-        print("\nATENCION: revise las sesiones marcadas arriba antes de archivar.")
+        print("\nATENCION: hay sesiones con problemas de integridad.")
+        print("Reviselas antes de continuar y NO formatee ninguna tarjeta.")
         return 1
 
-    print("\nListo. Las sesiones ya pueden entrar a las etapas 3 y 4 del flujo.")
+    if args.verify:
+        print("\nIntegridad verificada: todas las sesiones coinciden.")
+    else:
+        print("\nListo. Las sesiones ya pueden entrar a las etapas 3 y 4 del flujo.")
     return 0
 
 
