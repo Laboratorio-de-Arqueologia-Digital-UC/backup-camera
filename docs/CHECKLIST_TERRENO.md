@@ -32,6 +32,10 @@ menor.
 
 Ejecutar el programa **como administrador**.
 
+La etapa 4 escribe en el **depósito final de la workstation**. El traslado
+posterior al almacenamiento institucional se hace por otra vía y no lo realiza
+este programa.
+
 ---
 
 ## Si las fotos ya se copiaron a mano
@@ -54,9 +58,9 @@ cuanto antes, mientras la tarjeta original exista.
 ## REGLA DE ORO
 
 > **No formatear la tarjeta hasta ver `audit_log.txt` con `VERIFIED OK` en la
-> carpeta de la sesión en el servidor.**
+> carpeta de la sesión, dentro del depósito final.**
 
-Un diálogo en pantalla no es prueba. El archivo en el servidor sí.
+Un diálogo en pantalla no es prueba. El archivo en el depósito sí.
 
 ---
 

@@ -8,8 +8,10 @@
 que ya hizo a mano, comprobar que el respaldo está completo y qué hacer cuando
 aparece un error.
 
-**Qué NO cubre:** el procesamiento fotogramétrico posterior, la administración
-del NAS y el desarrollo del programa (para eso está `knowledge/knowledge.md`).
+**Qué NO cubre:** el procesamiento fotogramétrico posterior, el **traslado del
+material terminado al almacenamiento institucional** (eso se hace por otra vía,
+con otro procedimiento) y el desarrollo del programa (para eso está
+`knowledge/knowledge.md`).
 
 ---
 
@@ -20,8 +22,8 @@ corrompen, no hay segunda oportunidad: el contexto ya fue desarmado. Por eso el
 respaldo aquí no es "copiar y pegar", y descansa en tres ideas:
 
 **Tres copias.** El dato vive en la tarjeta, en el computador, en un disco
-externo y finalmente en el servidor. Nunca se elimina un eslabón antes de
-confirmar el siguiente.
+externo y finalmente en el depósito final de la workstation. Nunca se elimina un
+eslabón antes de confirmar el siguiente.
 
 **Verificación, no confianza.** Copiar un archivo puede fallar en silencio: un
 cable malo o un sector dañado producen un archivo que *parece* estar bien.
@@ -31,7 +33,7 @@ Si difieren en un solo bit, avisa.
 
 **Cadena de custodia.** Se registra de dónde vino cada archivo, cuándo y con
 qué tarjeta física. Así, años después, se puede demostrar que la foto del
-servidor es la misma que salió de la cámara.
+depósito es la misma que salió de la cámara.
 
 > Si algo en esta guía le parece burocrático, recuerde: el objetivo es que en
 > diez años alguien pueda confiar en estos archivos sin haber estado presente.
@@ -46,8 +48,9 @@ servidor es la misma que salió de la cámara.
 | **Hash (BLAKE3)** | Huella digital de un archivo: 64 caracteres. Si el archivo cambia aunque sea un bit, la huella cambia por completo. |
 | **`manifest.json`** | El acta de la sesión: lista cada archivo con su hash, tamaño y origen. Es la fuente de verdad. |
 | **`hashes_blake3.json`** | Lista simplificada de huellas que consume la etapa siguiente (fotogrametría). |
-| **`audit_log.txt`** | Certificado que se crea en el servidor cuando la sesión llegó y fue verificada. **Su presencia es la prueba de que el respaldo terminó.** |
+| **`audit_log.txt`** | Certificado que se crea en el depósito final cuando la sesión llegó y fue verificada. **Su presencia es la prueba de que el respaldo terminó.** |
 | **`.backup_drive`** | Archivo marcador que usted crea en la raíz de un disco para autorizarlo como destino de respaldo. Sin él, el programa ignora el disco. |
+| **Depósito final** | La carpeta de la workstation (o de almacenamiento conectado a ella) donde queda el material auditado. **No es el NAS:** el traslado al almacenamiento institucional se hace después, por otra vía. |
 | **Adopción** | Generar el `manifest.json` de una copia que ya se hizo a mano, para que pueda entrar al flujo. |
 | **Cadena de custodia parcial** | Marca de las copias adoptadas: se garantiza que no cambiaron desde la adopción, pero no que sean idénticas a la tarjeta original. |
 | **Modo puente** | Modo para computadores con poco espacio: copia por trozos usando el disco interno como paso intermedio. |
@@ -63,8 +66,7 @@ servidor es la misma que salió de la cámara.
 - **Un lector de tarjetas** (interno o USB).
 - **Un disco externo** con capacidad de al menos 1,5 veces lo que espera
   respaldar en la temporada.
-- **Acceso al NAS o servidor** del laboratorio, con la ruta asignada a una
-  letra de unidad (por ejemplo `Z:`).
+- **La ruta del depósito final** que use el laboratorio en la workstation.
 - **El programa instalado**: pida el ejecutable `BackupCamera_vX.Y.Z.exe` o
   siga los pasos del `README.md` si va a ejecutarlo desde el código.
 
@@ -196,13 +198,17 @@ la carpeta incompleta del disco externo y vuelva a clonar.
 
 1. Verifique el **Origen**: normalmente el disco externo. Con *Elegir origen…*
    puede archivar desde cualquier carpeta.
-2. Escriba la ruta del servidor (por ejemplo `Z:\Archivo_Arqueologia`).
+2. Indique la ruta del **depósito final** en la workstation.
 3. Pulse **ARCHIVAR Y VALIDAR**.
 
-Aquí ocurre lo esencial: cada archivo se copia al servidor y se le recalcula la
+Aquí ocurre lo esencial: cada archivo se copia al depósito y se le recalcula la
 huella, que se compara contra el `manifest.json` original. Si todo coincide, se
 escribe el `audit_log.txt`. Si algo no coincide, la sesión queda marcada y **no**
 recibe certificado.
+
+> **Fuera de alcance:** el traslado posterior de este material al
+> almacenamiento institucional se hace por otra vía y con otro procedimiento.
+> Este programa termina cuando el depósito final tiene su certificado.
 
 > El origen y el destino no pueden ser la misma carpeta. Si lo son, el programa
 > se detiene: copiar un archivo sobre sí mismo lo destruiría.
@@ -249,12 +255,16 @@ uv run python scripts/adopt.py --root "D:\Piezas" --mode per-piece \
 
 Use `--mode single` si toda la carpeta es una sola sesión.
 
+El reporte incluye el **tiempo transcurrido y la velocidad**: con eso puede
+estimar cuánto tardará una temporada completa antes de empezarla.
+
 ### Qué significa "cadena de custodia parcial"
 
 Una copia hecha fuera del sistema **no se puede certificar** como idéntica a la
 tarjeta: nadie verificó los bits en el momento de copiarlos. El sistema es
 honesto al respecto y marca esas sesiones como `partial`. El certificado del
-servidor dirá que se verificaron contra la línea base adoptada, no contra la SD.
+depósito final dirá que se verificaron contra la línea base adoptada, no contra
+la SD.
 
 Esto no invalida el material: significa que el punto de partida de la garantía
 es la fecha de adopción. **Por eso conviene adoptar cuanto antes**, mientras la
@@ -267,20 +277,20 @@ programa se niega a sobrescribir su manifiesto.
 
 ## 8. La regla de oro: cuándo puede formatear la tarjeta
 
-**Solo cuando exista el `audit_log.txt` en el servidor.**
+**Solo cuando exista el `audit_log.txt` en el depósito final.**
 
-Compruébelo usted mismo. Vaya a la carpeta de la sesión en el servidor y
+Compruébelo usted mismo. Vaya a la carpeta de la sesión en el depósito y
 verifique que estén los tres archivos:
 
 ```
-Z:\Archivo_Arqueologia\2026-08-06_SD-A1B2C3D4_1430\
+<deposito_final>\2026-08-06_SD-A1B2C3D4_1430\
 ├── manifest.json
 ├── hashes_blake3.json
 └── audit_log.txt      <-- este es el certificado
 ```
 
 Ábralo: debe decir `Status: VERIFIED OK`. Un diálogo de "proceso completado" en
-pantalla no es suficiente prueba; el archivo en el servidor sí lo es.
+pantalla no es suficiente prueba; el archivo en el depósito sí lo es.
 
 Si el mensaje dice *Sesiones procesadas: 0*, no se archivó nada. Revise la
 sección 10.
@@ -311,7 +321,7 @@ Estados posibles:
 | `no_manifest` | Nunca se adoptó. | Adoptarla. |
 
 Sobre `drift`: si un archivo aparece como **modificado** y nadie lo editó a
-propósito, sospeche del disco y compare con la copia del servidor de inmediato.
+propósito, sospeche del disco y compare con la copia del depósito de inmediato.
 Si aparece como **nuevo**, probablemente alguien agregó fotos después de
 adoptar; vuelva a adoptar con `--force` para incorporarlas a la línea base.
 
@@ -332,7 +342,7 @@ Códigos de salida del comando: `0` sin observaciones, `1` hay algo que revisar,
 | *No se encontraron sesiones con manifiesto en el origen* | Copia manual sin adoptar. | Adoptarla (sección 7). |
 | *N carpeta(s) sin manifest.json fueron omitidas* | Parte del origen no está adoptado. | Aceptar la adopción que ofrece el programa. |
 | *El origen y el destino final son la misma carpeta* | Se eligió la misma ruta dos veces. | Cambiar el destino. Este aviso le acaba de evitar perder archivos. |
-| `CRITICAL: INTEGRITY ERROR ... (Hash mismatch!)` | La copia en el servidor no coincide con el original. | **No formatear nada.** Reintentar; si persiste, avisar al responsable: puede haber un disco o un cable fallando. |
+| `CRITICAL: INTEGRITY ERROR ... (Hash mismatch!)` | La copia en el depósito no coincide con el original. | **No formatear nada.** Reintentar; si persiste, avisar al responsable: puede haber un disco o un cable fallando. |
 | `CONFLICTO: ya existe una sesión archivada distinta llamada ...` | Dos sesiones distintas con el mismo nombre (por ejemplo dos `Pieza_001` de discos diferentes). | El programa guarda la segunda con la fecha añadida. Renómbrelas para que sean distinguibles. |
 | *Un archivo supera el espacio interno libre seguro* | Un video muy grande no cabe en el búfer del modo puente. | Liberar espacio en `C:`. |
 
@@ -340,14 +350,15 @@ Códigos de salida del comando: `0` sin observaciones, `1` hay algo que revisar,
 
 ## 11. Lo que nunca debe hacer
 
-- **Formatear la tarjeta** antes de ver el `audit_log.txt` en el servidor.
+- **Formatear la tarjeta** antes de ver el `audit_log.txt` en el depósito final.
 - **Desconectar** un disco o sacar la tarjeta mientras hay una copia en curso.
 - **Renombrar o mover** archivos dentro de una sesión ya adoptada: la
   verificación los reportará como faltantes y nuevos.
 - **Editar a mano** el `manifest.json`. Es el acta; si algo no cuadra, se
   vuelve a adoptar.
 - **Usar la misma carpeta** como origen y destino del archivo final.
-- **Guardar una sola copia**, aunque sea en el NAS. El NAS también falla.
+- **Guardar una sola copia**, aunque sea en almacenamiento institucional.
+  Todo almacenamiento falla.
 - **Ignorar un mensaje en rojo** por tener prisa. Anótelo y pregunte.
 
 ---
@@ -357,6 +368,8 @@ Códigos de salida del comando: `0` sin observaciones, `1` hay algo que revisar,
 Dicho de frente, para que no los descubra en el peor momento:
 
 - **Solo Windows.**
+- **El traslado al almacenamiento institucional no lo hace este programa.**
+  Termina en el depósito final de la workstation.
 - **La adopción no es recursiva.** Solo mira el primer nivel de subcarpetas. Si
   su estructura es `Sitio\Unidad\Pieza`, tendrá que adoptar cada nivel
   intermedio por separado.
@@ -380,13 +393,13 @@ Dicho de frente, para que no los descubra en el peor momento:
 - [ ] Espacio libre suficiente en el disco externo y en el computador.
 - [ ] Programa abierto una vez para confirmar que detecta el disco.
 - [ ] Tarjetas formateadas **solo** después de confirmar que el material
-      anterior ya tiene su certificado en el servidor.
+      anterior ya tiene su certificado en el depósito final.
 
 ### Al volver de terreno (por cada tarjeta)
 - [ ] Etapa 1: la tarjeta aparece con ID de hardware.
 - [ ] Etapa 2: ingesta terminada; el resumen cuadra con lo que esperaba.
 - [ ] Etapa 3: clonado al disco externo sin mensajes en rojo.
-- [ ] Etapa 4: archivado al servidor.
+- [ ] Etapa 4: archivado al depósito final.
 - [ ] `audit_log.txt` presente y con `VERIFIED OK`.
 - [ ] Anotado en la bitácora: fecha, tarjeta, sesión, incidencias.
 - [ ] Solo ahora: formatear la tarjeta.
