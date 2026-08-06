@@ -4,6 +4,27 @@ import datetime
 import json
 
 
+def normalize_root(path):
+    r"""
+    Normaliza una raiz de almacenamiento para que sea absoluta.
+
+    En Windows una ruta como "E:" es RELATIVA al directorio actual de esa
+    unidad, no a su raiz. Por eso os.path.join("E:", "x") devuelve "E:x",
+    que puede resolver a una carpeta inesperada. MonitorThread entrega los
+    discos en ese formato ("%s:" % letra), asi que hay que corregirlo antes
+    de construir cualquier ruta derivada.
+
+    Devuelve el valor sin cambios si es None/vacio o si no es una unidad sola.
+    """
+    if not path:
+        return path
+
+    drive, tail = os.path.splitdrive(path)
+    if drive and not tail:
+        return drive + os.sep
+    return path
+
+
 def calculate_required_space(source_path):
     """
     Recursively sums file sizes in source_path.
@@ -27,7 +48,7 @@ def check_destination_space(dst_path_root, required_bytes):
         # In Windows, shutil.disk_usage works on folders too
         import shutil
 
-        total, used, free = shutil.disk_usage(dst_path_root)
+        total, used, free = shutil.disk_usage(normalize_root(dst_path_root))
 
         buffer_bytes = 1 * 1024 * 1024 * 1024  # 1GB
         return free > (required_bytes + buffer_bytes)
@@ -83,6 +104,12 @@ def save_hashes_blake3(session_path, files):
     """
     Saves a flat JSON dictionary of {filename: hash} to hashes_blake3.json.
     Used by subsequent stage (fotogrametria-pipeline).
+
+    NOTE: las claves son basename, no la ruta relativa. Es un contrato
+    deliberado con fotogrametria-pipeline (ver tests/test_hashes.py), pero
+    implica que dos archivos con el mismo nombre en subcarpetas distintas
+    colisionan y solo sobrevive el ultimo. lib_adopt detecta y reporta ese
+    caso; el manifest.json conserva siempre la ruta relativa completa.
     """
     hashes = {}
     for f in files:

@@ -5,12 +5,19 @@ import logging
 import threading
 
 from lib_copy import secure_copy
-from lib_storage import save_hashes_blake3
+from lib_storage import normalize_root, save_hashes_blake3
 
 SESSIONS_FOLDER = "Backup_Ingesta"
 MANIFEST_NAME = "manifest.json"
 AUDIT_NAME = "audit_log.txt"
 ORIGIN_MANUAL = "manual_adopted"
+
+
+def same_path(first, second):
+    """Compara rutas de forma segura en sistemas insensibles a mayusculas."""
+    return os.path.normcase(os.path.abspath(first)) == os.path.normcase(
+        os.path.abspath(second)
+    )
 
 
 class ArchiveWorker(threading.Thread):
@@ -29,10 +36,11 @@ class ArchiveWorker(threading.Thread):
                             sesiones para permitir entrar al flujo en etapa 4.
         """
         super().__init__()
-        self.src_root = src_root
-        self.dest_root = dest_root
+        # "E:" es relativa al directorio actual de esa unidad; "E:\" no.
+        self.src_root = normalize_root(src_root)
+        self.dest_root = normalize_root(dest_root)
+        self.sessions_root = normalize_root(sessions_root)
         self.app = app
-        self.sessions_root = sessions_root
         self.daemon = True
         self.stop_event = threading.Event()
 
@@ -79,6 +87,48 @@ class ArchiveWorker(threading.Thread):
         skipped = [path for path in subdirs if not self._has_manifest(path)]
         return sessions, skipped
 
+    # --- Deteccion de colisiones en el destino --------------------------
+
+    @staticmethod
+    def _fingerprint(manifest_data):
+        """Huella estable de una sesion: pares (ruta, hash) ordenados."""
+        return sorted(
+            (str(item.get("path")), str(item.get("hash")))
+            for item in manifest_data.get("files", [])
+        )
+
+    def _resolve_destination(self, folder_name, manifest_data):
+        """
+        Devuelve (ruta_destino, ya_archivada, hubo_conflicto).
+
+        La sola existencia de la carpeta destino ya no prueba que sea la misma
+        sesion: los nombres adoptados ("Pieza_001") no son unicos como si lo
+        eran los canonicos ("2026-08-06_SD-A1B2C3_1430"). Sin esta
+        comparacion, una segunda sesion distinta con el mismo nombre se
+        omitia y se contaba como archivada.
+        """
+        dest = os.path.join(self.dest_root, folder_name)
+        audit = os.path.join(dest, AUDIT_NAME)
+
+        if not (os.path.isdir(dest) and os.path.exists(audit)):
+            return dest, False, False
+
+        previous = None
+        try:
+            with open(
+                os.path.join(dest, MANIFEST_NAME), "r", encoding="utf-8"
+            ) as handle:
+                previous = json.load(handle)
+        except (OSError, ValueError):
+            previous = None
+
+        if previous is not None:
+            if self._fingerprint(previous) == self._fingerprint(manifest_data):
+                return dest, True, False
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        return os.path.join(self.dest_root, f"{folder_name}__{stamp}"), False, True
+
     # --- Auditoria ------------------------------------------------------
 
     @staticmethod
@@ -122,6 +172,17 @@ class ArchiveWorker(threading.Thread):
 
     def run(self):
         try:
+            # secure_copy abre el destino con "wb", que TRUNCA el archivo a
+            # cero bytes antes de leer el origen. Si ambos coinciden, el dato
+            # original se destruye de forma irreversible.
+            if same_path(self.src_root, self.dest_root):
+                self.app.archive_failed(
+                    "El origen y el destino final son la misma carpeta "
+                    f"({self.src_root}). La operacion se cancelo para no "
+                    "destruir los archivos originales."
+                )
+                return
+
             sessions, skipped = self._collect_sessions()
 
             if skipped:
@@ -142,6 +203,7 @@ class ArchiveWorker(threading.Thread):
 
             total_sessions = len(sessions)
             processed_count = 0
+            conflicts = []
 
             self.app.update_archive_status(f"Escaneando {total_sessions} sesiones...")
 
@@ -150,7 +212,6 @@ class ArchiveWorker(threading.Thread):
                     break
 
                 folder_name = os.path.basename(os.path.normpath(src_session_path))
-                dest_session_path = os.path.join(self.dest_root, folder_name)
                 manifest_path = os.path.join(src_session_path, MANIFEST_NAME)
 
                 try:
@@ -158,20 +219,43 @@ class ArchiveWorker(threading.Thread):
                         manifest_data = json.load(f)
                 except Exception as e:
                     logging.error(f"Error loading manifest for {folder_name}: {e}")
+                    self.app.log_message(
+                        f"ERROR: manifiesto ilegible en {folder_name} ({e}). "
+                        "Sesion omitida."
+                    )
+                    continue
+
+                dest_session_path, already_archived, conflict = (
+                    self._resolve_destination(folder_name, manifest_data)
+                )
+
+                if already_archived:
+                    logging.info(f"Skipping {folder_name}: Already archived.")
+                    processed_count += 1
+                    continue
+
+                if conflict:
+                    conflicts.append(folder_name)
+                    self.app.log_message(
+                        "CONFLICTO: ya existe una sesion archivada distinta "
+                        f"llamada '{folder_name}'. Se archivara como "
+                        f"'{os.path.basename(dest_session_path)}' para no "
+                        "sobrescribir ni perder datos."
+                    )
+
+                # Segunda barrera: aunque las raices difieran, las rutas de
+                # sesion pueden coincidir (src "E:\" + dest "E:\Backup_Ingesta").
+                if same_path(src_session_path, dest_session_path):
+                    self.app.log_message(
+                        f"ERROR: la sesion '{folder_name}' tiene el mismo origen "
+                        "y destino. Omitida para no destruir los archivos."
+                    )
                     continue
 
                 self.app.update_archive_status(f"Archivando: {folder_name}")
 
                 files_to_copy = manifest_data.get("files", [])
                 total_files = len(files_to_copy)
-
-                # Ya archivada previamente (carpeta destino con auditoria).
-                if os.path.exists(dest_session_path) and os.path.exists(
-                    os.path.join(dest_session_path, AUDIT_NAME)
-                ):
-                    logging.info(f"Skipping {folder_name}: Already archived.")
-                    processed_count += 1
-                    continue
 
                 os.makedirs(dest_session_path, exist_ok=True)
 
@@ -205,6 +289,7 @@ class ArchiveWorker(threading.Thread):
 
                     except Exception as e:
                         logging.error(f"Copy error {rel_path}: {e}")
+                        self.app.log_message(f"ERROR al copiar {rel_path}: {e}")
                         session_valid = False
 
                 if session_valid:
@@ -220,8 +305,16 @@ class ArchiveWorker(threading.Thread):
                 else:
                     self.app.log_message(
                         f"ERROR: La sesion {folder_name} contiene errores de "
-                        "integridad."
+                        f"integridad. Copia parcial conservada en "
+                        f"{dest_session_path} (sin audit_log) para revision."
                     )
+
+            if conflicts:
+                self.app.log_message(
+                    f"AVISO: {len(conflicts)} sesion(es) con nombre duplicado en "
+                    "el destino se archivaron con sufijo de fecha: "
+                    + ", ".join(conflicts)
+                )
 
             self.app.archive_complete(processed_count)
 
