@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag existente a construir y publicar (ej: v3.2.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,9 +17,12 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 45
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag || github.ref }}
 
     - name: Set up Python 3.9
       uses: actions/setup-python@v5
@@ -37,9 +46,20 @@ jobs:
       run: |
         uv run python build.py
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: List build output
+      run: dir dist
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
+        name: BackupCamera-EXE-${{ inputs.tag || github.ref_name }}
+        path: dist/*.exe
+        if-no-files-found: error
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ inputs.tag || github.ref_name }}
         files: dist/BackupCamera_*.exe
+        fail_on_unmatched_files: true
         generate_release_notes: true
